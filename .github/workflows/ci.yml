@@ -1,0 +1,30 @@
+name: Verify and package
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LifeLedger-plugin
+          path: |
+            dist/LifeLedger-*.zip
+            dist/main.js
+            dist/manifest.json
+            dist/styles.css
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

@@ -1,0 +1,260 @@
+/* Shared B layout. Obsidian's theme class selects the scoped colour palette. */
+.lifeledger {
+  --ll-bg:#111217; --ll-panel:#1a1c23; --ll-border:#30323e; --ll-text:#efeee9;
+  --ll-muted:#a4a5b3; --ll-gold:#f6cf7a; --ll-blue:#91b9f5; --ll-green:#92d6b4;
+  --ll-scheme:dark; --ll-secondary:#25262e; --ll-button:#252730;
+  --ll-button-hover:#2e303a; --ll-border-hover:#51525f;
+  --ll-primary-text:#282317; --ll-primary:#f6cf7a; --ll-primary-hover:#ffdc94;
+  --ll-tag-border:#484336; --ll-tag-bg:#29251c; --ll-nav-active:#2b2930;
+  --ll-stat-bg:#191b22; --ll-asset-start:#30291e; --ll-asset-end:#1c1d23;
+  --ll-asset-border:#534834; --ll-stage-glow:#392e171f;
+  --ll-input:#12141b; --ll-field:#15171e; --ll-row-hover:#ffffff05;
+  --ll-icon:#2b2b30; --ll-stage-border:#2b2e39; --ll-stage-bg:#0e1016;
+  --ll-celebration-start:#554328d9; --ll-celebration-end:#090a12e8; --ll-celebration-text:#ffe6a4;
+  --ll-day-border:#32343e; --ll-day-bg:#1e2028; --ll-day-selected:#393020;
+  --ll-chart-active:#958357; --ll-chart-grid:#353743; --ll-chart-label:#9593a2;
+  --ll-track:#31333d; --ll-error-border:#b36d4e; --ll-error:#e7a4a1; --ll-backdrop:#0008;
+  --ll-grid-bg:#06060c; --ll-grid-past:#16161e; --ll-grid-tracked:#2c2418;
+  --ll-grid-unlit:#2a2a3a; --ll-grid-asset:#9cc3ff; --ll-grid-gold:#ffd166;
+  --ll-grid-bloom:#fff4d6; --ll-grid-warm:#ff8b3d; --ll-grid-ash:#5a4030;
+  --background-primary:var(--ll-bg); --background-primary-alt:var(--ll-panel);
+  --background-secondary:var(--ll-secondary); --background-modifier-border:var(--ll-border);
+  --text-normal:var(--ll-text); --text-muted:var(--ll-muted);
+  --text-faint:var(--ll-muted); --text-error:var(--ll-error);
+  --interactive-accent:var(--ll-primary); --text-on-accent:var(--ll-primary-text);
+  background:var(--ll-bg); color:var(--ll-text); color-scheme:var(--ll-scheme);
+  font-family:var(--font-text,'Noto Serif SC',serif); font-size:15px;
+  overflow:auto; padding:0 !important; container:lifeledger / inline-size;
+}
+.theme-light .lifeledger {
+  --ll-bg:#f6f7fa; --ll-panel:#ffffff; --ll-border:#dce1e9; --ll-text:#292d35;
+  --ll-muted:#657080; --ll-gold:#996311; --ll-blue:#346ca7; --ll-green:#2c7558;
+  --ll-scheme:light; --ll-secondary:#eef1f6; --ll-button:#edf0f5;
+  --ll-button-hover:#e4e9f1; --ll-border-hover:#aeb8c7;
+  --ll-tag-border:#e7d4af; --ll-tag-bg:#fff5df; --ll-nav-active:#f4e9d3;
+  --ll-stat-bg:#ffffff; --ll-asset-start:#fff5df; --ll-asset-end:#ffffff;
+  --ll-asset-border:#e2cda5; --ll-stage-glow:#d5a2450d;
+  --ll-input:#ffffff; --ll-field:#f9fafc; --ll-row-hover:#e9edf580;
+  --ll-icon:#e9edf4; --ll-stage-border:#dce1e9; --ll-stage-bg:#f9fafc;
+  --ll-celebration-start:#fff2d8f5; --ll-celebration-end:#ffffffed; --ll-celebration-text:#80530e;
+  --ll-day-border:#dce1e9; --ll-day-bg:#f9fafc; --ll-day-selected:#fff2d8;
+  --ll-chart-active:#bc924e; --ll-chart-grid:#dce1e9; --ll-chart-label:#657080;
+  --ll-track:#e5e9f0; --ll-error-border:#bc7754; --ll-error:#a33d39; --ll-backdrop:#23304440;
+  --ll-grid-bg:#f9fafc; --ll-grid-past:#e3e6ec; --ll-grid-tracked:#e9dcc3;
+  --ll-grid-unlit:#d1d7e2; --ll-grid-asset:#76a7df; --ll-grid-gold:#d5a245;
+  --ll-grid-bloom:#ad7414; --ll-grid-warm:#c48531; --ll-grid-ash:#c7bba7;
+}
+.lifeledger *, .lifeledger-settings * { box-sizing:border-box; }
+.lifeledger .ll-shell { max-width:1250px; margin:auto; padding:28px 32px 80px; }
+.lifeledger .ll-header { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:22px; }
+.lifeledger .ll-eyebrow { color:var(--ll-muted); font:11px Georgia,serif; letter-spacing:.12em; text-transform:uppercase; margin-bottom:5px; }
+.lifeledger h1 { color:var(--ll-text); margin:0; font-size:26px; line-height:1.5; font-weight:500; letter-spacing:0; }
+.lifeledger h2 { color:var(--ll-text); font-size:18px; line-height:1.5; font-weight:500; margin:0 0 14px; }
+.lifeledger h3 { color:var(--ll-text); font-size:16px; line-height:1.5; font-weight:500; margin:0 0 12px; }
+.lifeledger p { line-height:1.8; margin:8px 0; overflow-wrap:anywhere; }
+.lifeledger small { font-size:12px; line-height:1.7; }
+.lifeledger button { color:var(--ll-text); background:var(--ll-button); border:1px solid var(--ll-border); border-radius:6px; box-shadow:none; font:inherit; line-height:1.5; height:auto; min-height:32px; padding:6px 12px; white-space:normal; cursor:pointer; }
+.lifeledger button:hover { background:var(--ll-button-hover); border-color:var(--ll-border-hover); }
+.lifeledger button:focus-visible, .lifeledger input:focus-visible, .lifeledger select:focus-visible, .lifeledger textarea:focus-visible { outline:2px solid var(--ll-gold); outline-offset:3px; }
+.lifeledger button:disabled { opacity:.5; cursor:default; }
+.lifeledger .ll-primary { background:var(--ll-primary); color:var(--ll-primary-text); border-color:var(--ll-primary); font-weight:600; padding:9px 15px; }
+.lifeledger .ll-primary:hover { background:var(--ll-primary-hover); border-color:var(--ll-primary-hover); }
+.lifeledger .ll-ghost { background:transparent; }
+.lifeledger .ll-tag { color:var(--ll-gold); border:1px solid var(--ll-tag-border); background:var(--ll-tag-bg); font-size:12px; line-height:1.5; padding:3px 9px; border-radius:5px; white-space:nowrap; }
+.lifeledger .ll-muted { color:var(--ll-muted); font-size:13px; }
+.lifeledger .ll-number, .lifeledger .ll-record-amount { color:var(--ll-text); font-family:Georgia,'Times New Roman',serif; font-variant-numeric:tabular-nums; font-weight:400; }
+.lifeledger .ll-number { display:block; font-size:26px; line-height:1.4; margin:7px 0; overflow-wrap:anywhere; }
+.lifeledger .ll-gold, .lifeledger .ll-baseline .ll-number { color:var(--ll-gold); }
+.lifeledger .ll-blue { color:var(--ll-blue); }
+.lifeledger .ll-green, .lifeledger .ll-income .ll-number { color:var(--ll-green); }
+.lifeledger .ll-section-heading, .lifeledger .ll-page-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.lifeledger .ll-section-heading { margin-bottom:14px; }
+.lifeledger .ll-section-heading h2, .lifeledger .ll-section-heading h3 { margin:0; }
+.lifeledger .ll-page-heading { margin-bottom:20px; flex-wrap:wrap; }
+.lifeledger .ll-page-heading h2 { margin-bottom:4px; }
+.lifeledger .ll-panel { min-width:0; padding:21px; border:1px solid var(--ll-border); border-radius:14px; background:var(--ll-panel); }
+.lifeledger .ll-nav { display:flex; gap:5px; margin:17px 0 23px; flex-wrap:wrap; }
+.lifeledger .ll-nav button { background:transparent; border-color:transparent; color:var(--ll-muted); padding:7px 15px; }
+.lifeledger .ll-nav .is-active { color:var(--ll-gold); background:var(--ll-nav-active); }
+.lifeledger .ll-nav button:last-child { margin-left:auto; }
+.lifeledger .ll-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0 18px; }
+.lifeledger .ll-toolbar .ll-field { flex:0 1 160px; }
+.lifeledger .ll-section-heading .ll-toolbar, .lifeledger .ll-page-heading .ll-toolbar { margin:0; }
+.lifeledger .ll-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:20px; }
+.lifeledger .ll-stat { min-width:0; padding:15px 18px; border:1px solid var(--ll-border); border-radius:10px; background:var(--ll-stat-bg); }
+.lifeledger .ll-stat > span, .lifeledger .ll-stat > small { display:block; }
+.lifeledger .ll-stat > small { font-size:11px; }
+.lifeledger .ll-asset-overview { margin-bottom:23px; }
+.lifeledger .ll-asset-overview > .ll-section-heading { margin-bottom:11px; }
+.lifeledger .ll-asset-cards { grid-template-columns:1.25fr repeat(3,minmax(0,1fr)); margin-bottom:0; }
+.lifeledger .ll-asset-cards.is-empty { grid-template-columns:1fr; }
+.lifeledger .ll-asset-total, .lifeledger .ll-asset-account { padding:16px 19px; border-radius:12px; min-width:0; text-align:left; }
+.lifeledger .ll-asset-total { background:linear-gradient(115deg,var(--ll-asset-start),var(--ll-asset-end)); border-color:var(--ll-asset-border); }
+.lifeledger .ll-asset-total .ll-number { color:var(--ll-gold); font-size:31px; }
+.lifeledger .ll-account-strip { display:contents; }
+.lifeledger .ll-asset-account { display:block; background:var(--ll-panel); }
+.lifeledger .ll-asset-account .ll-number { font-size:25px; }
+.lifeledger .ll-asset-account > span, .lifeledger .ll-asset-account > small { display:block; }
+.lifeledger .ll-asset-account small { font-size:11px; }
+.lifeledger .ll-asset-account.is-selected { border-color:var(--ll-gold); }
+.lifeledger .ll-account-arrow { float:right; color:var(--ll-gold); }
+.lifeledger .ll-home-layout { display:grid; grid-template-columns:345px minmax(0,1fr); gap:30px; align-items:start; }
+.lifeledger .ll-home-ledger { min-width:0; border-right:1px solid var(--ll-border); padding-right:24px; }
+.lifeledger .ll-home-stage { min-width:0; padding-top:20px; background:radial-gradient(ellipse at 65% 15%,var(--ll-stage-glow),transparent 65%); }
+.lifeledger .ll-entry-card h2 { font-size:17px; }
+.lifeledger .ll-entry-label { display:block; margin:18px 0 8px; color:var(--ll-muted); line-height:1.8; font-size:14px; }
+.lifeledger .ll-text-input { display:block; width:100%; max-width:100%; min-height:110px; resize:vertical; font:inherit; background:var(--ll-input); color:var(--ll-text); border:1px solid var(--ll-border); border-radius:6px; padding:10px 12px; line-height:1.8; }
+.lifeledger .ll-home-input { margin-top:8px; font-size:15px; }
+.lifeledger .ll-entry-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+.lifeledger .ll-entry-actions .ll-ghost { font-size:12px; padding:6px 9px; }
+.lifeledger .ll-entry-hint { font-size:12px; margin-top:12px; }
+.lifeledger .ll-pending-drafts button { display:block; font-size:12px; margin-top:8px; text-align:left; }
+.lifeledger .ll-recent, .lifeledger .ll-cost-summary { margin-top:28px; }
+.lifeledger .ll-recent > .ll-ghost { margin-top:12px; font-size:13px; }
+.lifeledger .ll-empty { padding:22px 0; color:var(--ll-muted); font-size:13px; line-height:1.8; margin:0; }
+.lifeledger .ll-home > .ll-empty { border:1px solid var(--ll-border); background:var(--ll-panel); padding:16px 20px; border-radius:10px; margin-bottom:20px; }
+.lifeledger .ll-record-row { display:grid; grid-template-columns:31px minmax(0,1fr) auto; gap:10px; align-items:center; text-align:left; width:100%; border:0; border-bottom:1px solid var(--ll-border); border-radius:0; background:transparent; padding:11px 0; }
+.lifeledger .ll-record-row:hover { background:var(--ll-row-hover); }
+.lifeledger .ll-record-icon { height:29px; display:grid; place-items:center; border-radius:8px; background:var(--ll-icon); color:var(--ll-muted); font-size:13px; }
+.lifeledger .ll-record-description { min-width:0; }
+.lifeledger .ll-record-title { display:block; font-size:13px; overflow-wrap:anywhere; }
+.lifeledger .ll-record-description small { display:block; font-size:11px; }
+.lifeledger .ll-record-amount { font-size:15px; text-align:right; }
+.lifeledger .ll-cost-summary h2 { font-size:17px; }
+.lifeledger .ll-cost-summary .ll-number { font-size:24px; }
+.lifeledger .ll-cost-summary details { font-size:13px; margin:12px 0; }
+.lifeledger .ll-cost-summary button { background:transparent; font-size:13px; }
+.lifeledger .ll-home-summary { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:25px; }
+.lifeledger .ll-home-summary .ll-stat { background:transparent; padding:10px 13px; min-height:80px; }
+.lifeledger .ll-home-summary .ll-number { font-size:22px; }
+.lifeledger .ll-stage-card { margin:0; padding:0; background:transparent; border:0; }
+.lifeledger .ll-stage-heading { text-align:left; margin-bottom:20px; }
+.lifeledger .ll-stage-heading h2 { font-size:20px; }
+.lifeledger .ll-freedom-number { color:var(--ll-gold); font:88px/1.2 Georgia,'Times New Roman',serif; font-variant-numeric:tabular-nums; letter-spacing:-.05em; margin:14px 0 18px; }
+.lifeledger .ll-freedom-unit { font-family:var(--font-text,serif); color:var(--ll-muted); font-size:15px; letter-spacing:normal; margin-left:7px; }
+.lifeledger .ll-freedom-sub { color:var(--ll-muted); font-size:13px; margin:8px 0; }
+.lifeledger .ll-math { font-size:13px; color:var(--ll-muted); margin:12px 0 18px; }
+.lifeledger .ll-math > summary { color:var(--ll-gold); }
+.lifeledger .ll-math[open] { padding-bottom:8px; }
+.lifeledger summary { cursor:pointer; }
+.lifeledger .ll-stage { height:400px; width:100%; position:relative; border:1px solid var(--ll-stage-border); background:var(--ll-stage-bg); border-radius:9px; overflow:hidden; }
+.lifeledger .ll-stage canvas { display:block; }
+.lifeledger .ll-legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:12px; font-size:12px; color:var(--ll-muted); }
+.lifeledger .ll-stage-tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:14px 0 24px; }
+.lifeledger .ll-stage-tools button { font-size:12px; padding:4px 9px; background:transparent; }
+.lifeledger .ll-celebration { position:absolute; inset:0; display:grid; place-items:center; padding:24px; background:radial-gradient(ellipse,var(--ll-celebration-start),var(--ll-celebration-end)); font-size:clamp(22px,3vw,40px); color:var(--ll-celebration-text); text-align:center; animation:ll-celebrate 2s ease-out; }
+.lifeledger .ll-celebration[hidden] { display:none; }
+@keyframes ll-celebrate { from { opacity:0; transform:scale(.92); } to { opacity:1; transform:scale(1); } }
+.lifeledger .ll-field { display:flex; flex-direction:column; gap:6px; min-width:0; font-size:13px; color:var(--ll-muted); }
+.lifeledger .ll-field input, .lifeledger .ll-field select { min-width:0; width:100%; max-width:100%; height:34px; border:1px solid var(--ll-border); border-radius:6px; background:var(--ll-field); color:var(--ll-text); font-family:inherit; padding:6px 9px; }
+.lifeledger .ll-month-controls { flex:1 1 560px; justify-content:end; }
+.lifeledger .ll-month-controls .ll-field { flex-basis:140px; }
+.lifeledger .ll-month-summary { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:20px; }
+.lifeledger .ll-month-summary .ll-stat { background:transparent; border:0; border-right:1px solid var(--ll-border); border-radius:0; padding:4px 16px; }
+.lifeledger .ll-month-summary .ll-stat:first-child { padding-left:0; }
+.lifeledger .ll-month-summary .ll-stat:last-child { border-right:0; }
+.lifeledger .ll-month-summary .ll-number { font-size:24px; }
+.lifeledger .ll-calendar-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:20px; align-items:start; }
+.lifeledger .ll-calendar { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
+.lifeledger .ll-weekday { text-align:center; color:var(--ll-muted); font-size:13px; padding:8px 0 12px; }
+.lifeledger .ll-day { display:flex; flex-direction:column; align-items:start; gap:6px; padding:10px 7px; min-height:103px; min-width:0; border:1px solid var(--ll-day-border); background:var(--ll-day-bg); box-shadow:none; }
+.lifeledger .ll-day strong { color:var(--ll-text); font-weight:400; }
+.lifeledger .ll-day-heading { display:flex; align-items:center; gap:6px; }
+.lifeledger .ll-today-dot { width:5px; height:5px; flex-shrink:0; border-radius:50%; background:var(--ll-gold); }
+.lifeledger .ll-day small { display:block; max-width:100%; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
+.lifeledger .ll-day-status { color:var(--ll-muted); }
+.lifeledger .ll-day.is-selected { border-color:var(--ll-gold); background:var(--ll-day-selected); }
+.lifeledger .ll-day.is-complete .ll-day-status { color:var(--ll-green); }
+.lifeledger .ll-calendar-legend { font-size:11px; margin:16px 0 8px; }
+.lifeledger .ll-ledger-detail { min-width:0; }
+.lifeledger .ll-transaction, .lifeledger .ll-account-card, .lifeledger .ll-cost-card { padding:16px 0; margin:0; border:0; border-bottom:1px solid var(--ll-border); border-radius:0; }
+.lifeledger .ll-transaction > strong { color:var(--ll-text); font-size:15px; font-weight:400; }
+.lifeledger .ll-transaction p { font-size:13px; }
+.lifeledger .ll-transaction details, .lifeledger .ll-cost-card details { color:var(--ll-muted); font-size:12px; }
+.lifeledger .ll-transaction .ll-toolbar { margin-bottom:0; }
+.lifeledger .ll-transaction button, .lifeledger .ll-account-card button, .lifeledger .ll-cost-card button { font-size:12px; padding:4px 9px; background:transparent; margin:8px 8px 0 0; }
+.lifeledger .ll-account-card .ll-number, .lifeledger .ll-cost-card .ll-number { font-size:22px; }
+.lifeledger .ll-account-card .ll-section-heading, .lifeledger .ll-cost-card .ll-section-heading { margin-bottom:6px; }
+.lifeledger .ll-account-detail, .lifeledger .ll-account-history { margin-top:20px; }
+.lifeledger .ll-chart { margin:16px 0 24px; }
+.lifeledger .ll-chart-compact { padding:0; border:0; background:transparent; margin-top:28px; }
+.lifeledger .ll-chart-choices { display:flex; gap:5px; }
+.lifeledger .ll-chart-choices button { padding:4px 9px; font-size:12px; background:transparent; }
+.lifeledger .ll-chart-choices .is-active { border-color:var(--ll-chart-active); color:var(--ll-gold); }
+.lifeledger .ll-chart-drawing { position:relative; }
+.lifeledger .ll-chart svg { display:block; width:100%; height:auto; }
+.lifeledger .ll-chart circle { cursor:pointer; }
+.lifeledger .ll-chart circle:focus { outline:none; stroke:var(--ll-text); stroke-width:2px; }
+.lifeledger .ll-chart-empty { position:absolute; top:20%; left:0; right:0; text-align:center; padding:0 20px; }
+.lifeledger .ll-chart-drawing > p:not(.ll-chart-empty) { font-size:12px; }
+.lifeledger .ll-chart-drawing > .ll-chart-result { color:var(--ll-gold); min-height:20px; }
+.lifeledger .ll-two-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.lifeledger .ll-two-stats .ll-number { font-size:23px; }
+.lifeledger .ll-category-panel { margin-top:20px; }
+.lifeledger .ll-category-row { display:grid; grid-template-columns:80px minmax(0,1fr) 100px; gap:14px; align-items:center; width:100%; margin:8px 0; padding:8px 0; text-align:left; background:transparent; border:0; font-size:13px; }
+.lifeledger .ll-category-row:hover { background:var(--ll-row-hover); }
+.lifeledger .ll-category-track { height:7px; background:var(--ll-track); border-radius:5px; overflow:hidden; }
+.lifeledger .ll-category-track > span { display:block; height:100%; background:var(--ll-gold); border-radius:5px; }
+.lifeledger .ll-cost-page > .ll-stats .ll-stat { background:transparent; border:0; padding:4px 0 16px; }
+.lifeledger .ll-errors { display:grid; gap:8px; padding:18px; border:1px solid var(--ll-error-border); border-radius:10px; margin:16px 0; font-size:14px; }
+.lifeledger .ll-errors button { text-align:left; font-size:13px; }
+.lifeledger .ll-notice:empty { display:none; }
+.lifeledger .ll-notice { color:var(--ll-error); padding:10px 0; }
+.lifeledger .ll-dialog { background:var(--ll-panel); color:var(--ll-text); border:1px solid var(--ll-border); width:min(960px,94vw); max-height:88vh; border-radius:14px; padding:24px; font-family:var(--font-text,'Noto Serif SC',serif); }
+.lifeledger .ll-dialog::backdrop { background:var(--ll-backdrop); }
+.lifeledger .ll-dialog-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.lifeledger .ll-dialog-header h2 { margin:0; }
+.lifeledger .ll-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.lifeledger .ll-draft-row { padding:18px; border:1px solid var(--ll-border); border-radius:10px; margin:14px 0; }
+.lifeledger .ll-draft-row blockquote { font-size:13px; margin:14px 0; padding:8px 12px; border-left:2px solid var(--ll-border); color:var(--ll-muted); }
+.lifeledger .ll-check { display:flex; align-items:center; gap:8px; margin:12px 0; font-size:14px; }
+.lifeledger .ll-check input { flex-shrink:0; }
+.lifeledger .ll-cost-fields { border-top:1px solid var(--ll-border); padding-top:16px; }
+.lifeledger .ll-issue, .lifeledger .ll-error { color:var(--ll-error); font-size:13px; }
+.lifeledger .ll-direction { color:var(--ll-blue); font-size:15px; padding:8px 0; }
+.lifeledger .ll-editor-footer { border-top:1px solid var(--ll-border); padding-top:15px; position:sticky; bottom:-24px; background:var(--ll-panel); padding-bottom:10px; }
+.lifeledger .ll-editor-footer button { margin-right:10px; }
+@container lifeledger (max-width:1100px) {
+  .lifeledger .ll-shell { padding:24px 24px 70px; }
+  .lifeledger .ll-home-layout { grid-template-columns:310px minmax(0,1fr); gap:24px; }
+  .lifeledger .ll-asset-total .ll-number { font-size:28px; }
+  .lifeledger .ll-asset-account .ll-number { font-size:23px; }
+  .lifeledger .ll-entry-card > .ll-section-heading { flex-wrap:wrap; }
+}
+@container lifeledger (max-width:850px) {
+  .lifeledger .ll-home-layout, .lifeledger .ll-calendar-layout { grid-template-columns:1fr; }
+  .lifeledger .ll-home-ledger { border-right:0; padding-right:0; }
+  .lifeledger .ll-home-stage { padding-top:0; order:-1; }
+  .lifeledger .ll-home-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .lifeledger .ll-asset-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .lifeledger .ll-stage { height:300px; }
+  .lifeledger .ll-freedom-number { font-size:65px; }
+  .lifeledger .ll-month-controls { justify-content:start; }
+}
+@container lifeledger (max-width:540px) {
+  .lifeledger .ll-shell { padding:20px 15px 60px; }
+  .lifeledger .ll-header { align-items:start; flex-wrap:wrap; gap:10px; }
+  .lifeledger h1 { font-size:23px; }
+  .lifeledger .ll-nav button { padding:6px 11px; }
+  .lifeledger .ll-panel { padding:16px; }
+  .lifeledger .ll-stat { padding:12px; }
+  .lifeledger .ll-stats, .lifeledger .ll-month-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .lifeledger .ll-number, .lifeledger .ll-asset-total .ll-number, .lifeledger .ll-asset-account .ll-number { font-size:22px; }
+  .lifeledger .ll-asset-total, .lifeledger .ll-asset-account { padding:12px; }
+  .lifeledger .ll-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .lifeledger .ll-stage { height:255px; }
+  .lifeledger .ll-day { padding:8px 4px; }
+  .lifeledger .ll-day small { font-size:10px; }
+  .lifeledger .ll-category-row { grid-template-columns:60px minmax(0,1fr) 85px; gap:8px; }
+  .lifeledger .ll-two-stats { grid-template-columns:1fr; }
+  .lifeledger .ll-chart .ll-section-heading { flex-wrap:wrap; }
+}
+@media (prefers-reduced-motion:reduce) { .lifeledger .ll-celebration { animation:none; } }
+
+.lifeledger .ll-drafts-drawer { margin-block: 12px; }
+.lifeledger .ll-drafts-drawer summary { color: var(--ll-muted); cursor: pointer; }
+.lifeledger .ll-pending-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.lifeledger .ll-pending-row > button:first-child { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.lifeledger .ll-pending-row > .ll-ghost { flex-shrink: 0; font-size:12px; }
+
+.lifeledger-settings .ll-settings-error { color:var(--text-error); margin:6px 0 0; }

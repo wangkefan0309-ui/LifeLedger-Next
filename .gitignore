@@ -1,0 +1,11 @@
+node_modules/
+dist/
+main.js
+validation-vault/
+test-results/
+evidence/
+.obsidian/
+data.json
+.env
+.env.*
+*.log

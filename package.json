@@ -1,0 +1,38 @@
+{
+  "name": "lifeledger-next",
+  "version": "0.1.4",
+  "private": true,
+  "description": "本地账本、口播草稿与财富自由指南灯",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "test": "node scripts/verify-core.mjs",
+    "verify": "npm test && npm run build",
+    "package": "npm run build && node scripts/package.mjs",
+    "verify:ui": "node scripts/verify-ui.mjs",
+    "install:test": "node scripts/install-test.mjs",
+    "verify:adversarial": "node scripts/audit-user-flows.mjs",
+    "open:review": "node scripts/open-review-vault.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "fflate": "0.8.3",
+    "obsidian": "1.14.4",
+    "playwright-core": "1.64.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangkefan0309-ui/LifeLedger.git"
+  },
+  "homepage": "https://github.com/wangkefan0309-ui/LifeLedger",
+  "bugs": {
+    "url": "https://github.com/wangkefan0309-ui/LifeLedger/issues"
+  }
+}
