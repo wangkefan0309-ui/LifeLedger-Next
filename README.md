@@ -37,7 +37,7 @@ LifeLedger 是一个电脑端 Obsidian 插件，把日常收支、多账户余�
 
 ## 安装与更新
 
-1. 打开 [GitHub Releases](https://github.com/wangkefan0309-ui/LifeLedger/releases)，下载 `LifeLedger-0.1.4.zip`。源码页面的“Download ZIP”下载的是工程，不是可直接安装的插件。
+1. 打开 [GitHub Releases](https://github.com/wangkefan0309-ui/LifeLedger-Next/releases)，下载 `LifeLedger-0.1.4.zip`。源码页面的“Download ZIP”下载的是工程，不是可直接安装的插件。
 2. 解压后，将里面的 `lifeledger-next` 文件夹放到自己的 Vault 的 `.obsidian/plugins/` 中。
 3. 确认该文件夹内直接包含 `main.js`、`manifest.json` 和 `styles.css`。
 4. 在 Obsidian“设置 → 第三方插件 → 已安装插件”启用 LifeLedger，再点击侧栏钱包图标。

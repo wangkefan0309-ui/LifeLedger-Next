@@ -29,10 +29,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wangkefan0309-ui/LifeLedger.git"
+    "url": "git+https://github.com/wangkefan0309-ui/LifeLedger-Next.git"
   },
-  "homepage": "https://github.com/wangkefan0309-ui/LifeLedger",
+  "homepage": "https://github.com/wangkefan0309-ui/LifeLedger-Next",
   "bugs": {
-    "url": "https://github.com/wangkefan0309-ui/LifeLedger/issues"
+    "url": "https://github.com/wangkefan0309-ui/LifeLedger-Next/issues"
   }
 }
