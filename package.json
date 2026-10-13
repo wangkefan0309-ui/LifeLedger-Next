@@ -1,6 +1,6 @@
 {
   "name": "lifeledger-next",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "private": true,
   "description": "本地账本、口播草稿与财富自由指南灯",
   "type": "module",
@@ -12,7 +12,9 @@
     "verify:ui": "node scripts/verify-ui.mjs",
     "install:test": "node scripts/install-test.mjs",
     "verify:adversarial": "node scripts/audit-user-flows.mjs",
-    "open:review": "node scripts/open-review-vault.mjs"
+    "open:review": "node scripts/open-review-vault.mjs",
+    "verify:currency": "node scripts/verify-currency-ui.mjs",
+    "verify:screenshots": "node scripts/verify-screenshot-ui.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -24,6 +26,7 @@
     "typescript": "^5.7.3"
   },
   "license": "MIT",
+  "author": "Silas",
   "engines": {
     "node": ">=22"
   },

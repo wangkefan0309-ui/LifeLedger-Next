@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', '--test-reporter=tap', 'tests/finance.test.ts', 'tests/storage-api.test.ts'], { encoding: 'utf8', windowsHide: true });
+import { mkdir, writeFile, readdir } from 'node:fs/promises';
+const tests = (await readdir('tests')).filter(file => file.endsWith('.test.ts')).sort().map(file => `tests/${file}`);
+const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', '--test-reporter=tap', ...tests], { encoding: 'utf8', windowsHide: true });
 await mkdir('evidence', { recursive: true });
 await writeFile('evidence/core-tests.tap', result.stdout || result.stderr);
 const total = Number(result.stdout.match(/^# tests (\d+)$/m)?.[1] ?? 0), passed = Number(result.stdout.match(/^# pass (\d+)$/m)?.[1] ?? 0), failed = Number(result.stdout.match(/^# fail (\d+)$/m)?.[1] ?? 0);

@@ -8,6 +8,7 @@ export class Stage {
   private audio: any;
   private observer: ResizeObserver;
   private themeObserver: MutationObserver;
+  private resizeFrame: number | null = null;
   private disposed = false;
   private generation = 0;
   private finalData: object = {};
@@ -24,7 +25,14 @@ export class Stage {
       if (!this.disposed && host.ownerDocument.body.classList.contains('theme-light') !== this.grid.lightTheme) this.updatePalette();
     });
     this.themeObserver.observe(host.ownerDocument.body, { attributes: true, attributeFilter: ['class'] });
-    this.observer = new (host.ownerDocument.defaultView ?? window).ResizeObserver(() => { if (!this.disposed) { this.grid.resize(); if (!this.grid.rafId) this.grid.draw(); } });
+    const ownerWindow = host.ownerDocument.defaultView ?? window;
+    this.observer = new ownerWindow.ResizeObserver(() => {
+      if (this.disposed || this.resizeFrame !== null) return;
+      this.resizeFrame = ownerWindow.requestAnimationFrame(() => {
+        this.resizeFrame = null;
+        if (!this.disposed) { this.grid.resize(); if (!this.grid.rafId) this.grid.draw(); }
+      });
+    });
     this.observer.observe(host); this.set(current);
   }
   private updatePalette() {
@@ -61,6 +69,8 @@ export class Stage {
   skip() { this.generation++; this.grid.cancel(); this.banner.hidden = true; this.grid.setData(this.finalData); this.grid.resize(); this.grid.draw(); }
   destroy() {
     this.disposed = true; this.generation++; this.observer.disconnect(); this.themeObserver.disconnect(); this.grid.cancel();
+    if (this.resizeFrame !== null) (this.host.ownerDocument.defaultView ?? window).cancelAnimationFrame(this.resizeFrame);
+    this.resizeFrame = null;
     this.host.getAnimations().forEach(a => a.cancel());
     if (this.audio.ctx) void this.audio.ctx.close().catch(() => undefined);
   }

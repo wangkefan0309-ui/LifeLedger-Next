@@ -1,6 +1,8 @@
 import { applyEvents, checkBatch, replay, requireThat, sealBatch, undoEvents, validateConfig, validateTransaction, validateCost } from '../core/ledger';
 import { defaultConfig, localDate, sha256 } from '../core/primitives';
 import { emptyState, type Batch, type Config, type Draft, type LedgerEvent, type LedgerState } from '../core/types';
+import { accountCurrency, isCurrency } from '../core/currency';
+import { safeImageText } from '../core/image-evidence';
 
 export interface FileIO {
   list(prefix: string): Promise<string[]>;
@@ -38,10 +40,14 @@ export function validateDraft(value: unknown): asserts value is Draft {
     typeof d.text === 'string' && (d.textHistory === undefined || strings(d.textHistory)) && typeof d.submittedDate === 'string' && typeof d.timezone === 'string' &&
     typeof d.error === 'string' && typeof d.requestId === 'string' && ['editing', 'requesting', 'failed', 'review', 'saved'].includes(d.status) &&
     (d.origin === undefined || ['home', 'editor'].includes(d.origin)) && strings(d.completeDates) && Array.isArray(d.excluded) &&
+    (d.inputMode === undefined || ['text', 'screenshots'].includes(d.inputMode)) &&
+    (d.imageEvidence === undefined || (Array.isArray(d.imageEvidence) && d.imageEvidence.length <= 100 && new Set(d.imageEvidence.map(image => image?.id)).size === d.imageEvidence.length && d.imageEvidence.every(image => image && Object.keys(image).length === 2 && typeof image.id === 'string' && /^[\w-]+$/.test(image.id) && safeImageText(image.text)))) &&
     d.excluded.every(e => e && typeof e.source_quote === 'string' && typeof e.reason === 'string') && Array.isArray(d.rows) &&
     d.rows.every(r => r && typeof r.id === 'string' && ['income', 'expense', 'transfer', 'refund', 'borrow', 'repayment', 'lend', 'collect', 'adjustment', 'unknown'].includes(r.kind) &&
       ['date', 'amount', 'accountId', 'fromAccountId', 'toAccountId', 'debtAccountId', 'categoryId', 'relatedId', 'note', 'sourceQuote', 'amountQuote'].every(k => typeof r[k as keyof typeof r] === 'string') &&
       ['active', 'passive', 'other'].includes(r.incomeSource) && strings(r.issues) && ['reviewed', 'edited', 'usedDefault'].every(k => typeof r[k as keyof typeof r] === 'boolean') &&
+      (r.currency === undefined || isCurrency(r.currency)) && ['rateCny', 'receivedAmount', 'receivedAmountQuote'].every(k => r[k as keyof typeof r] === undefined || typeof r[k as keyof typeof r] === 'string') &&
+      (r.imageId === undefined || (typeof r.imageId === 'string' && d.imageEvidence?.some(image => image.id === r.imageId))) &&
       (r.dateRange === null || (r.dateRange && typeof r.dateRange.start === 'string' && typeof r.dateRange.end === 'string')) &&
       (r.cost === null || (r.cost && typeof r.cost.name === 'string' && ['device', 'subscription'].includes(r.cost.kind) && typeof r.cost.start === 'string' && typeof r.cost.end === 'string' && typeof r.cost.residual === 'string' && typeof r.cost.autoRenew === 'boolean'))) &&
     (d.usage === null || (d.usage && Number.isInteger(d.usage.input) && d.usage.input >= 0 && Number.isInteger(d.usage.output) && d.usage.output >= 0)), '草稿格式错误');
@@ -86,6 +92,10 @@ export class Repository {
     return this.locked(async () => {
       if (expectedFingerprint !== undefined) requireThat(this.configFingerprint === expectedFingerprint, '配置已在其他窗口变更，请重开设置后再保存');
       validateConfig(config);
+      for (const previous of this.config.accounts) {
+        const historical = this.state.batches.some(batch => batch.events.some(event => event.type === 'transaction.put' && [event.value.accountId, event.value.fromAccountId, event.value.toAccountId, event.value.debtAccountId].includes(previous.id)));
+        if (historical) { const next = config.accounts.find(a => a.id === previous.id); requireThat(next && accountCurrency(next) === accountCurrency(previous), '账户已有历史流水，不能删除或改变币种；请另建对应币种账户'); }
+      }
       for (const tx of this.state.transactions.values()) validateTransaction(tx, config, this.state, this.today());
       for (const cost of this.state.costs.values()) validateCost(cost, config, this.state);
       const expected = this.configFingerprint;

@@ -92,7 +92,21 @@
 .lifeledger .ll-asset-total { background:linear-gradient(115deg,var(--ll-asset-start),var(--ll-asset-end)); border-color:var(--ll-asset-border); }
 .lifeledger .ll-asset-total .ll-number { color:var(--ll-gold); font-size:31px; }
 .lifeledger .ll-account-strip { display:contents; }
-.lifeledger .ll-asset-account { display:block; background:var(--ll-panel); }
+.lifeledger .ll-asset-account { display:block; background:var(--ll-panel); border:1px solid var(--ll-border); }
+.lifeledger .ll-asset-actions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:end; }
+.lifeledger .ll-fx-button { font-size:12px; padding:4px 9px; }
+.lifeledger .ll-account-open { display:block; width:100%; padding:0; border:0; border-radius:0; background:transparent; text-align:left; }
+.lifeledger .ll-account-open:hover { background:transparent; }
+.lifeledger .ll-account-open > span { display:block; }
+.lifeledger .ll-conversion-row { display:flex; align-items:center; gap:7px; margin:2px 0 6px; }
+.lifeledger .ll-conversion-row small { min-width:0; overflow-wrap:anywhere; }
+.lifeledger .ll-conversion-button { min-height:22px; padding:0 5px; font-size:13px; border:0; }
+.lifeledger .ll-fx-status { margin:9px 0 0; font-size:11px; }
+.lifeledger .ll-rate-details { margin:14px 0; padding:12px 0; border-top:1px solid var(--ll-border); }
+.lifeledger .ll-rate-details > summary { color:var(--ll-gold); font-size:13px; }
+.lifeledger .ll-fx-preview { font:22px/1.5 Georgia,serif; color:var(--ll-gold); margin:16px 0; }
+.lifeledger .ll-fx-actual { margin-top:16px; border-top:1px solid var(--ll-border); padding-top:16px; }
+.lifeledger .ll-fx-actual[hidden], .lifeledger .ll-rate-details[hidden] { display:none; }
 .lifeledger .ll-asset-account .ll-number { font-size:25px; }
 .lifeledger .ll-asset-account > span, .lifeledger .ll-asset-account > small { display:block; }
 .lifeledger .ll-asset-account small { font-size:11px; }
@@ -207,6 +221,14 @@
 .lifeledger .ll-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
 .lifeledger .ll-draft-row { padding:18px; border:1px solid var(--ll-border); border-radius:10px; margin:14px 0; }
 .lifeledger .ll-draft-row blockquote { font-size:13px; margin:14px 0; padding:8px 12px; border-left:2px solid var(--ll-border); color:var(--ll-muted); }
+.lifeledger .ll-image-input { border:1px dashed var(--ll-border); border-radius:10px; padding:14px; margin-bottom:14px; }
+.lifeledger .ll-image-input > summary { cursor:pointer; color:var(--ll-muted); font-size:13px; }
+.lifeledger .ll-image-input[open] > summary { margin-bottom:12px; }
+.lifeledger .ll-image-card { display:flex; gap:14px; align-items:flex-start; padding:12px 0; border-top:1px solid var(--ll-border); }
+.lifeledger .ll-image-preview { width:112px; height:140px; object-fit:contain; background:var(--ll-panel); border:1px solid var(--ll-border); border-radius:6px; }
+.lifeledger .ll-image-info { flex:1; min-width:0; }
+.lifeledger .ll-image-info .ll-field { margin:8px 0; }
+.lifeledger .ll-image-input input[type=file][hidden] { display:none; }
 .lifeledger .ll-check { display:flex; align-items:center; gap:8px; margin:12px 0; font-size:14px; }
 .lifeledger .ll-check input { flex-shrink:0; }
 .lifeledger .ll-cost-fields { border-top:1px solid var(--ll-border); padding-top:16px; }

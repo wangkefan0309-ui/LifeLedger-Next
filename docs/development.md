@@ -19,6 +19,8 @@ npm run package
 ```powershell
 npm run verify:ui
 npm run verify:adversarial
+npm run verify:currency
+npm run verify:screenshots
 npm run open:review
 ```
 
@@ -40,8 +42,14 @@ npm run verify:ui
 
 人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，使用预发布标记，保留未完成的真实链路验收说明。
 
+作者及维护者为 Silas。Release 标签应指向已提交、已通过检查的源码；上传附件后核对远端大小和 SHA-256。README 提供对应版本的 ZIP 下载链接，预发布不依赖 `/releases/latest` 跳转。旧 Obsidian-LifeLedger 已归档，迁移提示指向本仓库；未单独发布的本地版本在 CHANGELOG 明确标注。
+
 ## 提交前复核
 
 检查 `git status` 和待提交清单，确保只有源码、测试、公开文档及虚拟截图。`node_modules/`、`dist/`、`main.js`、`validation-vault/`、`evidence/`、`.obsidian/`、`data.json` 和环境文件不进入 Git。发布运行文件通过 Release 附件提供。
 
 先阅读 [参与开发](../CONTRIBUTING.md)，保持整数金额、草稿确认和追加保存的约束。
+
+多币种实机脚本默认使用模拟 AI 和模拟参考汇率。单独验证真实公共参考汇率可运行 `$env:LIVE_RATES = '1'; npm run verify:currency`；此查询只用于虚拟 Vault，不使用金融 API 密钥，不表示真实口播已验收。
+
+截图脚本使用 Canvas 生成虚拟账单，模拟视觉服务通过插件真实请求接口返回可核对文字。覆盖选图、粘贴及拖入事件、范围过滤、补充用途、临时图片清除、备份恢复、错误与迟到回复。结果不代表真实 OCR 准确率，也不证明操作系统剪贴板已经验收；请求体不写入证据文件。

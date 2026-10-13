@@ -2,12 +2,13 @@ import { affects, baseline, costOn, dayStatus, filterTransactions, freedom, seri
 import { addDays, cents, daysBetween, decimal, id, localDate, money, validDate } from '../core/primitives';
 import { applyEvents, requireThat } from '../core/ledger';
 import { newDraft } from '../core/drafts';
-import type { Account, Config, Cost, Draft, LedgerEvent, Transaction } from '../core/types';
+import type { Account, Config, Cost, Currency, Draft, ExchangeRates, LedgerEvent, Transaction } from '../core/types';
 import { DraftEditor, KIND_NAMES, type EditorHost } from './editor';
 import { button, check, dialog, download, el, input, select } from './dom';
 import { Stage } from './stage';
+import { accountCurrency, baseAmount, convertMoney, CURRENCIES, formatCurrency, parseRate, RATE_SCALE, rateFor, rateText, transactionCurrency, valuationFor } from '../core/currency';
 
-export interface AppHost extends EditorHost { openSettings: () => void; openFile: (path: string) => void }
+export interface AppHost extends EditorHost { openSettings: () => void; openFile: (path: string) => void; refreshRates: () => Promise<ExchangeRates>; ratesError: () => string }
 type Page = '首页' | '账本' | '分析' | '账户' | '每日成本';
 export class LedgerUI {
   page: Page = '首页'; month = localDate().slice(0, 7); selectedDay = ''; accountFilter = ''; categoryFilter = '';
@@ -46,17 +47,17 @@ export class LedgerUI {
     this.lastChange = { before, after: freedom(this.state(), this.config(), localDate()) };
     this.render(); if (this.stage) void this.stage.play(before, this.lastChange.after);
   }
-  async openDraft(draftId?: string, initialText = '', arrange = false) {
+  async openDraft(draftId?: string, initialText = '', arrange = false, screenshots = false) {
     if (this.openingDraft) return; this.openingDraft = true;
     const field = this.shell.querySelector<HTMLTextAreaElement>('.ll-home-input'); if (field) field.readOnly = true;
     try {
     await this.flushPending(); await this.editor?.destroy();
-    if ((!draftId && this.homeText.trim()) || (this.homeDraft && draftId === this.homeDraft.id)) {
+    if ((!screenshots && !draftId && this.homeText.trim()) || (this.homeDraft && draftId === this.homeDraft.id)) {
       draftId = this.homeDraft?.id; initialText = this.homeText;
       this.homeText = ''; this.homeDraft = undefined; this.captureStatus = '';
       const text = this.shell.querySelector<HTMLTextAreaElement>('.ll-home-input'); if (text) text.value = '';
     }
-    this.editor = new DraftEditor(this.overlays, { ...this.host, changed: (before, batchId) => this.changed(before, batchId), draftChanged: () => this.renderPending() }, this.host.repo.drafts.find(d => d.id === draftId), initialText);
+    this.editor = new DraftEditor(this.overlays, { ...this.host, changed: (before, batchId) => this.changed(before, batchId), draftChanged: () => this.renderPending() }, this.host.repo.drafts.find(d => d.id === draftId), initialText, screenshots);
     if (arrange) void this.editor.extract();
     } catch (e) { this.host.notice(`原文保留，请重试：${(e as Error).message}`); }
     finally { this.openingDraft = false; if (field) field.readOnly = false; }
@@ -104,20 +105,106 @@ export class LedgerUI {
     const card = el('div', 'll-stat', '', parent); el('span', 'll-muted', label, card); el('strong', 'll-number', value, card); if (detail) el('small', 'll-muted', detail, card); return card;
   }
   private accountName(aid: string | null) { return this.config().accounts.find(a => a.id === aid)?.name ?? '未配置'; }
+  private rateFields(parent: HTMLElement, changed = () => {}) {
+    const c = this.config(); let dirty = false;
+    const detail = el('details', 'll-rate-details', '', parent); detail.open = !c.exchangeRates;
+    el('summary', '', '参考汇率与离线设置', detail);
+    const status = el('p', 'll-muted', c.exchangeRates ? `参考日期 ${c.exchangeRates.asOf} · ${c.exchangeRates.source}` : '尚未设置汇率，可联网获取，也可手动填写', detail);
+    const form = el('div', 'll-form-grid', '', detail);
+    const usd = input(form, '1 美元折合人民币', c.exchangeRates ? rateText(c.exchangeRates.USD) : '', 'text', () => { dirty = true; changed(); });
+    const hkd = input(form, '1 港币折合人民币', c.exchangeRates ? rateText(c.exchangeRates.HKD) : '', 'text', () => { dirty = true; changed(); });
+    const date = input(form, '汇率日期', c.exchangeRates?.asOf ?? localDate(), 'date', () => { dirty = true; changed(); });
+    const update = button(detail, '更新参考汇率', () => this.action(async () => {
+      update.disabled = true;
+      try { const rates = await this.host.refreshRates(); usd.value = rateText(rates.USD); hkd.value = rateText(rates.HKD); date.value = rates.asOf; dirty = false; status.textContent = `参考日期 ${rates.asOf} · ${rates.source}`; changed(); }
+      finally { update.disabled = false; }
+    }), 'll-ghost');
+    el('p', 'll-muted', '参考汇率用于余额展示；真实换汇按银行实际扣款和到账记账。离线时保留原汇率及日期。', detail);
+    const get = (): ExchangeRates | undefined => {
+      if (!dirty) return this.config().exchangeRates;
+      requireThat(validDate(date.value) && date.value <= localDate(), '汇率日期需为已发生的有效日期');
+      return { asOf: date.value, fetchedAt: new Date().toISOString(), source: '手动汇率', USD: parseRate(usd.value), HKD: parseRate(hkd.value) };
+    };
+    return { node: detail, get };
+  }
+  private exchangeForm() {
+    const d = dialog(this.overlays, '换汇与参考汇率'), form = el('div', 'll-form-grid', '', d.node);
+    let fromCurrency: Currency = 'HKD', toCurrency: Currency = 'CNY', record = false;
+    const from = select(form, '原币种', fromCurrency, CURRENCIES, value => { fromCurrency = value as Currency; update(); });
+    const to = select(form, '折算币种', toCurrency, CURRENCIES, value => { toCurrency = value as Currency; update(); });
+    const amount = input(form, '换算金额', '', 'text');
+    const preview = el('p', 'll-fx-preview', '输入金额即可换算', d.node); preview.setAttribute('aria-live', 'polite');
+    const rates = this.rateFields(d.node, () => update());
+    button(rates.node, '保存汇率', () => this.action(async () => { const value = rates.get(); requireThat(value, '请先获取或填写汇率'); await this.host.repo.saveConfig({ ...this.config(), exchangeRates: value }); this.render(); update(); this.host.notice('汇率已保存'); }), 'll-ghost');
+    const tools = el('div', 'll-toolbar', '', d.node);
+    button(tools, '⇄ 交换币种', () => { [fromCurrency, toCurrency] = [toCurrency, fromCurrency]; from.value = fromCurrency; to.value = toCurrency; update(); }, 'll-ghost');
+    check(d.node, '同时记录一笔已发生的账户换汇', record, value => { record = value; actual.hidden = !value; });
+    const actual = el('div', 'll-fx-actual', '', d.node); actual.hidden = true;
+    const actualForm = el('div', 'll-form-grid', '', actual);
+    const source = select(actualForm, '转出账户', '', [['', '请选择转出账户']], () => {});
+    const target = select(actualForm, '转入账户', '', [['', '请选择转入账户']], () => {});
+    const received = input(actualForm, '实际到账金额', '', 'text');
+    const date = input(actualForm, '换汇发生日', localDate(), 'date');
+    const note = input(actualForm, '换汇备注', '', 'text');
+    const direction = el('p', 'll-muted', '', actual);
+    let confirmed = false; check(actual, '已核对银行实际扣款、到账金额和账户', confirmed, value => { confirmed = value; });
+    for (const field of [amount, received, date, source, target, from, to]) field.addEventListener('input', () => { confirmed = false; const box = actual.querySelector<HTMLInputElement>('input[type=checkbox]'); if (box) box.checked = false; });
+    button(actual, '保存已核对换汇', () => this.action(async () => {
+      requireThat(record && confirmed, '请先核对实际扣款、到账金额和账户'); requireThat(fromCurrency !== toCurrency, '同币种请使用普通内部转账');
+      const a = this.config().accounts.find(a => a.id === source.value), b = this.config().accounts.find(a => a.id === target.value);
+      requireThat(a && b && a.id !== b.id && accountCurrency(a) === fromCurrency && accountCurrency(b) === toCurrency, '请选择与两端币种一致的不同账户');
+      const outgoing = cents(amount.value), incoming = cents(received.value); requireThat(outgoing > 0 && incoming > 0, '实际扣款和到账须大于零'); requireThat(validDate(date.value) && date.value <= localDate(), '换汇发生日须为已发生的有效日期');
+      const value = rates.get(); requireThat(value, '请先设置用于人民币统计的汇率');
+      if (value !== this.config().exchangeRates) await this.host.repo.saveConfig({ ...this.config(), exchangeRates: value });
+      const batchId = id(), tx: Transaction = { id: id(), version: 1, batchId, draftId: null, rowId: null, kind: 'transfer', date: date.value, dateRange: null, amountCents: cents(amount.value), accountId: null, fromAccountId: a.id, toAccountId: b.id, debtAccountId: null, categoryId: null, relatedId: null, incomeSource: 'other', note: note.value || '账户换汇', originalText: `${a.name}实际扣款 ${amount.value} ${fromCurrency}，${b.name}实际到账 ${received.value} ${toCurrency}`, sourceQuote: '', corrections: [] };
+      tx.valuation = valuationFor(this.config(), fromCurrency);
+      tx.exchange = { receivedCents: cents(received.value), valuation: valuationFor(this.config(), toCurrency) ?? { currency: 'CNY', rate: RATE_SCALE, asOf: date.value, source: '人民币本币' } };
+      if (!tx.valuation) delete tx.valuation;
+      const before = freedom(this.state(), this.config(), localDate()); const batch = await this.host.repo.commit([{ type: 'transaction.put', expected: 0, value: tx }], id(), '保存已核对账户换汇', batchId); d.close(); this.changed(before, batch.id);
+    }), 'll-primary');
+    const fill = (node: HTMLSelectElement, currency: Currency) => {
+      const old = node.value; node.replaceChildren();
+      for (const [value, label] of [['', '请选择账户'], ...this.config().accounts.filter(a => a.kind === 'asset' && accountCurrency(a) === currency).map(a => [a.id, a.name])]) { const option = el('option', '', label, node); option.value = value; }
+      if (Array.from(node.options).some(option => option.value === old)) node.value = old;
+    };
+    const update = () => {
+      fill(source, fromCurrency); fill(target, toCurrency); direction.textContent = `转出 ${fromCurrency} · 实际到账 ${toCurrency}；本金不计收入支出，手续费另记支出。`;
+      if (!amount.value.trim()) { preview.textContent = '输入金额即可换算'; return; }
+      try { const c = { ...this.config(), exchangeRates: rates.get() }; preview.textContent = `${formatCurrency(cents(amount.value), fromCurrency)} ≈ ${formatCurrency(convertMoney(cents(amount.value), fromCurrency, toCurrency, c), toCurrency)} · 参考换算`; }
+      catch (error) { preview.textContent = (error as Error).message; }
+    };
+    amount.addEventListener('input', update); update();
+  }
   private assetOverview(parent: HTMLElement) {
     const c = this.config(), today = localDate(), f = freedom(this.state(), c, today);
     const overview = el('section', 'll-asset-overview', '', parent); overview.setAttribute('aria-label', '当前资产与账户余额');
-    const top = el('div', 'll-section-heading', '', overview); el('h2', '', '我的资产', top); el('span', 'll-muted', `截至 ${today.replaceAll('-', '.')}`, top);
+    const top = el('div', 'll-section-heading', '', overview); el('h2', '', '我的资产', top);
+    const actions = el('div', 'll-asset-actions', '', top); el('span', 'll-muted', `截至 ${today.replaceAll('-', '.')}`, actions);
+    button(actions, '⇄ 换汇', () => this.exchangeForm(), 'll-ghost ll-fx-button');
     const summary = el('div', `ll-stats ll-asset-cards${c.accounts.some(a => a.kind === 'asset') ? '' : ' is-empty'}`, '', overview);
     const total = this.stat(summary, '总资产 · 所有资产账户合计', `¥${money(f.assets)}`, `负债 ¥${money(f.liabilities)} · 净资产 ¥${money(f.net)}`); total.classList.add('ll-asset-total');
     const accounts = el('div', 'll-account-strip', '', summary);
     for (const a of c.accounts.filter(a => a.kind === 'asset')) {
-      const card = button(accounts, '', () => { this.page = '账户'; this.selectedAccount = a.id; this.render(); }, `ll-asset-account${this.page === '账户' && this.selectedAccount === a.id ? ' is-selected' : ''}`);
+      const open = () => { this.page = '账户'; this.selectedAccount = a.id; this.render(); };
+      const card = el('article', `ll-asset-account${this.page === '账户' && this.selectedAccount === a.id ? ' is-selected' : ''}`, '', accounts);
+      card.addEventListener('click', event => { if (!(event.target as Element).closest('button')) open(); });
       card.dataset.accountId = a.id;
-      el('span', 'll-muted', a.name, card); el('strong', 'll-number', `¥${money(f.balances.get(a.id) ?? 0)}`, card);
+      const main = button(card, '', open, 'll-account-open'); main.setAttribute('aria-label', `查看${a.name}明细`);
+      el('span', 'll-muted', a.name, main); el('strong', 'll-number', formatCurrency(f.balances.get(a.id) ?? 0, accountCurrency(a)), main);
+      if (a.displayCurrency && a.displayCurrency !== accountCurrency(a)) {
+        const conversion = el('div', 'll-conversion-row', '', card);
+        let text = '汇率待设置'; try { text = `约 ${formatCurrency(convertMoney(f.balances.get(a.id) ?? 0, accountCurrency(a), a.displayCurrency, c), a.displayCurrency)}`; } catch { /* amount stays unknown until a rate exists */ }
+        el('small', 'll-muted ll-converted-balance', text, conversion);
+        const toggle = button(conversion, '⇄', () => this.action(async () => {
+          const options = CURRENCIES.map(([code]) => code).filter(code => code !== accountCurrency(a));
+          const next = options[(options.indexOf(a.displayCurrency!) + 1) % options.length];
+          await this.host.repo.saveConfig({ ...this.config(), accounts: this.config().accounts.map(account => account.id === a.id ? { ...account, displayCurrency: next } : account) }); this.render();
+        }), 'll-ghost ll-conversion-button'); toggle.setAttribute('aria-label', `切换${a.name}折算币种`); toggle.title = '只切换折算显示，实际余额不变';
+      }
       const description = a.id === c.defaultAccountId ? '默认日常收支账户' : `自由计算纳入 ${a.freedomBps / 100}%`;
       const foot = el('small', 'll-muted', description, card); el('span', 'll-account-arrow', '↗', foot).setAttribute('aria-hidden', 'true');
     }
+    if (c.accounts.some(a => accountCurrency(a) !== 'CNY' || (a.displayCurrency && a.displayCurrency !== 'CNY'))) el('p', 'll-muted ll-fx-status', c.exchangeRates ? `资产合计按人民币折算 · 参考汇率 ${c.exchangeRates.asOf} · ${c.exchangeRates.source}${this.host.ratesError() ? ' · 更新失败，沿用缓存' : ''}` : '折算汇率待设置；点击换汇可更新或手动填写', overview);
     return f;
   }
   private recordRow(parent: HTMLElement, t: Transaction) {
@@ -127,7 +214,7 @@ export class LedgerUI {
     const description = el('span', 'll-record-description', '', row); el('span', 'll-record-title', t.note || KIND_NAMES[t.kind], description);
     const direction = t.fromAccountId ? `${this.accountName(t.fromAccountId)} → ${this.accountName(t.toAccountId)}` : this.accountName(t.accountId);
     el('small', 'll-muted', `${t.date.slice(5).replace('-', '.')} · ${KIND_NAMES[t.kind]} · ${direction}`, description);
-    el('span', `ll-record-amount${t.kind === 'income' ? ' ll-green' : transfer ? ' ll-blue' : t.kind === 'refund' ? ' ll-gold' : ''}`, `${t.kind === 'expense' ? '−' : ['income', 'refund'].includes(t.kind) ? '+' : ''}¥${money(t.amountCents)}`, row);
+    el('span', `ll-record-amount${t.kind === 'income' ? ' ll-green' : transfer ? ' ll-blue' : t.kind === 'refund' ? ' ll-gold' : ''}`, `${t.kind === 'expense' ? '−' : ['income', 'refund'].includes(t.kind) ? '+' : ''}${formatCurrency(t.amountCents, transactionCurrency(t))}${t.exchange ? ` → ${formatCurrency(t.exchange.receivedCents, t.exchange.valuation.currency)}` : ''}`, row);
   }
   private home(parent: HTMLElement) {
     const c = this.config(), s = this.state(), today = localDate(), f = freedom(s, c, today);
@@ -148,6 +235,7 @@ export class LedgerUI {
     const parse = button(actions, '整理成账目', () => takeText(true), 'll-primary'); parse.disabled = !this.homeText.trim();
     text.addEventListener('input', () => { this.capture(text.value); parse.disabled = !text.value.trim(); });
     button(actions, '口播 / 手动记账', () => takeText(false), 'll-ghost');
+    button(actions, '截图记账', () => this.openDraft(undefined, '', false, true), 'll-ghost');
     el('p', 'll-muted ll-entry-hint', `整理后核对金额与账户，再保存。${c.defaultAccountId ? `普通收支默认使用「${this.accountName(c.defaultAccountId)}」。` : '可在账户页设置默认收支账户。'}转账需明确两端账户。`, quick);
     el('div', 'll-pending-drafts', '', quick); this.renderPending();
     el('p', 'll-muted ll-capture-status', this.captureStatus, quick).setAttribute('role', 'status');
@@ -247,7 +335,8 @@ export class LedgerUI {
   }
   private transactionCard(parent: HTMLElement, t: Transaction) {
     const card = el('article', 'll-transaction', '', parent); card.dataset.transactionId = t.id;
-    el('strong', '', `${KIND_NAMES[t.kind]} · ¥${money(t.amountCents)}`, card);
+    el('strong', '', `${t.exchange ? '换汇' : KIND_NAMES[t.kind]} · ${formatCurrency(t.amountCents, transactionCurrency(t))}${t.exchange ? ` → ${formatCurrency(t.exchange.receivedCents, t.exchange.valuation.currency)}` : ''}`, card);
+    if (t.valuation) el('p', 'll-muted', `记账折算 ${formatCurrency(baseAmount(t), 'CNY')} · ${t.valuation.asOf} · ${t.valuation.source}，历史收支使用保存时汇率`, card);
     const account = t.fromAccountId ? `${this.accountName(t.fromAccountId)} → ${this.accountName(t.toAccountId)}` : `${this.accountName(t.accountId)}${t.debtAccountId ? ` / ${this.accountName(t.debtAccountId)}` : ''}`;
     el('p', '', `${t.date} · ${account} · ${this.config().categories.find(c => c.id === t.categoryId)?.name ?? '未分类'} · ${t.note}`, card);
     if (t.dateRange) el('p', 'll-muted', `区间汇总 ${t.dateRange.start} 至 ${t.dateRange.end}`, card);
@@ -262,14 +351,15 @@ export class LedgerUI {
   }
   private transactionForm(original: Transaction) {
     const d = dialog(this.overlays, '更正已保存账目'), value = structuredClone(original), form = el('div', 'll-form-grid', '', d.node);
-    input(form, '日期', value.date, 'date', v => { value.date = v; }); input(form, '金额（元）', decimal(value.amountCents), 'text', v => { try { value.amountCents = cents(v, value.kind === 'adjustment'); } catch { value.amountCents = NaN; } }); input(form, '备注', value.note, 'text', v => { value.note = v; });
-    const asset: [string, string][] = this.config().accounts.filter(a => a.kind === 'asset').map(a => [a.id, a.name]);
-    if (value.fromAccountId) { select(form, '转出账户', value.fromAccountId, asset, v => { value.fromAccountId = v; }); select(form, '转入账户', value.toAccountId!, asset, v => { value.toAccountId = v; }); }
+    input(form, '日期', value.date, 'date', v => { value.date = v; }); input(form, transactionCurrency(value) === 'CNY' ? '金额（元）' : `金额（${transactionCurrency(value)}）`, decimal(value.amountCents), 'text', v => { try { value.amountCents = cents(v, value.kind === 'adjustment'); } catch { value.amountCents = NaN; } }); input(form, '备注', value.note, 'text', v => { value.note = v; });
+    const asset: [string, string][] = this.config().accounts.filter(a => a.kind === 'asset' && accountCurrency(a) === transactionCurrency(value)).map(a => [a.id, a.name]);
+    if (value.fromAccountId) { select(form, '转出账户', value.fromAccountId, asset, v => { value.fromAccountId = v; }); select(form, '转入账户', value.toAccountId!, this.config().accounts.filter(a => a.kind === 'asset' && accountCurrency(a) === (value.exchange?.valuation.currency ?? transactionCurrency(value))).map(a => [a.id, a.name]), v => { value.toAccountId = v; }); }
     else select(form, '账户', value.accountId!, asset, v => { value.accountId = v; });
     if (['income', 'expense'].includes(value.kind)) select(form, '分类', value.categoryId ?? '', [['', '待分类'], ...this.config().categories.filter(c => c.kind === value.kind).map(c => [c.id, c.name] as [string, string])], v => { value.categoryId = v || null; });
     if (value.kind === 'income') select(form, '收入来源', value.incomeSource, [['active', '主动'], ['passive', '被动'], ['other', '其他']], v => { value.incomeSource = v as Transaction['incomeSource']; });
     if (value.debtAccountId) select(form, '负债账户', value.debtAccountId, this.config().accounts.filter(a => a.kind === 'liability').map(a => [a.id, a.name]), v => { value.debtAccountId = v; });
-    if (value.kind === 'refund') select(form, '关联原消费', value.relatedId ?? '', [['', '暂不关联'], ...[...this.state().transactions.values()].filter(t => t.kind === 'expense').map(t => [t.id, `${t.date} ${t.note} ${money(t.amountCents)}`] as [string, string])], v => { value.relatedId = v || null; value.categoryId = this.state().transactions.get(v)?.categoryId ?? value.categoryId; });
+    if (value.kind === 'refund') select(form, '关联原消费', value.relatedId ?? '', [['', '暂不关联'], ...[...this.state().transactions.values()].filter(t => t.kind === 'expense').map(t => [t.id, `${t.date} ${t.note} ${formatCurrency(t.amountCents, transactionCurrency(t))}`] as [string, string])], v => { value.relatedId = v || null; value.categoryId = this.state().transactions.get(v)?.categoryId ?? value.categoryId; });
+    if (value.exchange) input(form, `实际到账（${value.exchange.valuation.currency}）`, decimal(value.exchange.receivedCents), 'text', v => { try { value.exchange!.receivedCents = cents(v); } catch { value.exchange!.receivedCents = NaN; } });
     const linked = [...this.state().costs.values()].find(c => c.transactionId === value.id);
     if (linked) el('p', 'll-muted', `金额变化会同时更新成本项目“${linked.name}”，并保留调整记录。`, d.node);
     const reason = input(d.node, '更正说明', '', 'text');
@@ -277,7 +367,7 @@ export class LedgerUI {
       requireThat(reason.value.trim(), '请填写更正说明'); const before = freedom(this.state(), this.config(), localDate());
       value.version = original.version + 1; value.corrections = [...original.corrections, `${new Date().toISOString()} ${reason.value}`];
       const events: LedgerEvent[] = [{ type: 'transaction.put', expected: original.version, value }];
-      if (linked && linked.amountCents !== value.amountCents) events.push({ type: 'cost.put', expected: linked.version, value: { ...linked, amountCents: value.amountCents, version: linked.version + 1, adjustmentNotes: [...linked.adjustmentNotes, reason.value] } });
+      if (linked && linked.amountCents !== baseAmount(value)) events.push({ type: 'cost.put', expected: linked.version, value: { ...linked, amountCents: baseAmount(value), version: linked.version + 1, adjustmentNotes: [...linked.adjustmentNotes, reason.value] } });
       const batch = await this.host.repo.commit(events, id(), '用户更正交易'); d.close(); this.changed(before, batch.id);
     }), 'll-primary');
   }
@@ -339,7 +429,7 @@ export class LedgerUI {
     el('p', '', `${this.month.slice(0, 4)} 年已记录：收入 ¥${money(annual.income)}，净支出 ¥${money(annual.netExpense)}，结余 ¥${money(annual.surplus)}`, parent);
     const categories = el('section', 'll-panel ll-category-panel', '', parent); el('h2', '', '本月分类净支出', categories);
     const ts = filterTransactions(this.state(), start, end), amounts = new Map<string, number>();
-    for (const t of ts) if (t.kind === 'expense' || t.kind === 'refund') amounts.set(t.categoryId ?? '', (amounts.get(t.categoryId ?? '') ?? 0) + (t.kind === 'refund' ? -t.amountCents : t.amountCents));
+    for (const t of ts) if (t.kind === 'expense' || t.kind === 'refund') amounts.set(t.categoryId ?? '', (amounts.get(t.categoryId ?? '') ?? 0) + (t.kind === 'refund' ? -baseAmount(t) : baseAmount(t)));
     const maximum = Math.max(1, ...[...amounts.values()].map(Math.abs));
     for (const [categoryId, amount] of [...amounts].sort((a, b) => b[1] - a[1])) {
       const row = button(categories, '', () => { this.categoryFilter = categoryId || '$uncategorized'; this.accountFilter = ''; this.page = '账本'; this.selectedDay = ''; this.render(); }, 'll-category-row');
@@ -357,8 +447,8 @@ export class LedgerUI {
     const f = freedom(this.state(), this.config(), localDate());
     for (const account of this.config().accounts.filter(a => !selected || a.id === selected.id)) {
       const card = el('article', 'll-account-card', '', panel), accountHead = el('div', 'll-section-heading', '', card); el('h3', '', `${account.name} · ${account.kind === 'asset' ? '资产' : '负债'}`, accountHead);
-      el('strong', 'll-number', `¥${money(f.balances.get(account.id) ?? 0)}`, accountHead);
-      el('p', 'll-muted', `期初 ${account.openingDate} / ¥${money(account.openingCents)} · 自由计算纳入 ${account.freedomBps / 100}%${account.id === this.config().defaultAccountId ? ' · 默认收支账户' : ''}`, card);
+      el('strong', 'll-number', formatCurrency(f.balances.get(account.id) ?? 0, accountCurrency(account)), accountHead);
+      el('p', 'll-muted', `期初 ${account.openingDate} / ${formatCurrency(account.openingCents, accountCurrency(account))} · 自由计算纳入 ${account.freedomBps / 100}%${account.id === this.config().defaultAccountId ? ' · 默认收支账户' : ''}`, card);
       const adjustments = [...this.state().transactions.values()].filter(t => t.kind === 'adjustment' && t.accountId === account.id).sort((a, b) => b.date.localeCompare(a.date));
       if (adjustments.length) el('p', 'll-muted', `最近对账 ${adjustments[0].date}`, card);
       button(card, '看流水', () => { this.page = '账本'; this.accountFilter = account.id; this.categoryFilter = ''; this.selectedDay = ''; this.render(); });
@@ -374,31 +464,44 @@ export class LedgerUI {
   }
   private accountForm(existing?: Account) {
     const d = dialog(this.overlays, existing ? '修改账户' : '添加账户');
-    const account: Account = existing ? structuredClone(existing) : { id: id(), name: '', kind: 'asset', openingCents: 0, openingDate: localDate(), freedomBps: 10000, aliases: [] };
+    const account: Account = existing ? structuredClone(existing) : { id: id(), name: '', kind: 'asset', openingCents: 0, openingDate: localDate(), freedomBps: 10000, aliases: [], currency: 'CNY', displayCurrency: null };
     const form = el('div', 'll-form-grid', '', d.node);
     input(form, '账户名称', account.name, 'text', v => { account.name = v; });
     const type = select(form, '账户类型', account.kind, [['asset', '资产账户'], ['liability', '负债账户']], v => { account.kind = v as 'asset' | 'liability'; });
-    const amount = input(form, '期初余额（元）', decimal(account.openingCents), 'text', v => { try { account.openingCents = cents(v, true); } catch { account.openingCents = NaN; } });
+    const amount = input(form, accountCurrency(account) === 'CNY' ? '期初余额（元）' : `期初余额（${accountCurrency(account)}）`, decimal(account.openingCents), 'text', v => { try { account.openingCents = cents(v, true); } catch { account.openingCents = NaN; } });
+    const native = select(form, '账户币种', accountCurrency(account), CURRENCIES, v => {
+      account.currency = v as Currency;
+      account.displayCurrency = account.currency === 'CNY' ? null : 'CNY'; conversion.checked = !!account.displayCurrency;
+      const label = account.currency === 'CNY' ? '期初余额（元）' : `期初余额（${account.currency}）`; amount.parentElement!.querySelector('span')!.textContent = label; amount.setAttribute('aria-label', label);
+      rateInputs.node.hidden = account.currency === 'CNY' && !account.displayCurrency;
+      display.value = account.displayCurrency ?? (account.currency === 'CNY' ? 'USD' : 'CNY');
+    });
     const date = input(form, '余额生效日', account.openingDate, 'date', v => { account.openingDate = v; });
-    const hasTransactions = existing && [...this.state().transactions.values()].some(t => [t.accountId, t.fromAccountId, t.toAccountId, t.debtAccountId].includes(existing.id));
-    if (hasTransactions) { type.disabled = true; amount.disabled = true; date.disabled = true; el('p', 'll-muted', '已有流水时保留期初锚点；余额变化请使用对账校准。', d.node); }
+    const hasTransactions = existing && this.state().batches.some(batch => batch.events.some(event => event.type === 'transaction.put' && [event.value.accountId, event.value.fromAccountId, event.value.toAccountId, event.value.debtAccountId].includes(existing.id)));
+    if (hasTransactions) { type.disabled = true; native.disabled = true; amount.disabled = true; date.disabled = true; el('p', 'll-muted', '已有流水时保留期初币种和余额锚点；余额变化请使用对账校准。', d.node); }
     input(form, '自由计算纳入比例（%）', String(account.freedomBps / 100), 'text', v => { try { account.freedomBps = cents(v); } catch { account.freedomBps = NaN; } });
     input(form, '别名（逗号分隔）', account.aliases.join('，'), 'text', v => { account.aliases = v.split(/[,，]/).map(x => x.trim()).filter(Boolean); });
+    el('p', 'll-muted', '口播按账户名称及别名识别。食堂饭卡可添加“学校食堂、食堂、饭卡”；明确说用微信支付时仍按微信。', d.node);
+    const conversion = check(d.node, '显示其他币种的折算余额', !!account.displayCurrency, value => { account.displayCurrency = value ? display.value as Currency : null; rateInputs.node.hidden = accountCurrency(account) === 'CNY' && !value; });
+    const display = select(form, '默认折算币种', account.displayCurrency ?? 'USD', CURRENCIES, value => { if (conversion.checked) account.displayCurrency = value as Currency; });
+    const rateInputs = this.rateFields(d.node); rateInputs.node.hidden = accountCurrency(account) === 'CNY' && !account.displayCurrency;
     let defaultAccount = existing?.id === this.config().defaultAccountId;
     check(d.node, '设为默认收支账户（仅资产账户）', defaultAccount, v => { defaultAccount = v; });
     button(d.node, '保存账户', () => this.action(async () => {
       requireThat(account.openingDate <= localDate(), '期初余额不能设在未来');
-      const c: Config = { ...this.config(), accounts: [...this.config().accounts.filter(a => a.id !== account.id), account], defaultAccountId: defaultAccount ? account.id : this.config().defaultAccountId === account.id ? null : this.config().defaultAccountId };
+      if (account.displayCurrency === accountCurrency(account)) account.displayCurrency = null;
+      const c: Config = { ...this.config(), exchangeRates: rateInputs.get(), accounts: [...this.config().accounts.filter(a => a.id !== account.id), account], defaultAccountId: defaultAccount ? account.id : this.config().defaultAccountId === account.id ? null : this.config().defaultAccountId };
       await this.host.repo.saveConfig(c); d.close(); this.render();
     }), 'll-primary');
   }
   private reconcile(account: Account) {
     const d = dialog(this.overlays, `核对 ${account.name}`); const current = freedom(this.state(), this.config(), localDate()).balances.get(account.id) ?? 0;
-    el('p', '', `账本余额 ¥${money(current)}。填入实际余额，差额单列为对账调整。`, d.node);
-    const actual = input(d.node, '实际余额（元）', decimal(current), 'text'); const reason = input(d.node, '对账说明', '', 'text');
+    el('p', '', `账本余额 ${formatCurrency(current, accountCurrency(account))}。填入该账户本币实际余额，差额单列为对账调整。`, d.node);
+    const actual = input(d.node, accountCurrency(account) === 'CNY' ? '实际余额（元）' : `实际余额（${accountCurrency(account)}）`, decimal(current), 'text'); const reason = input(d.node, '对账说明', '', 'text');
     button(d.node, '确认校准', () => this.action(async () => {
       const amount = cents(actual.value, true) - current; requireThat(amount !== 0, '实际余额与账本相同，无需调整'); requireThat(reason.value.trim(), '请填写差额说明');
       const batchId = id(), tx: Transaction = { id: id(), version: 1, batchId, draftId: null, rowId: null, kind: 'adjustment', date: localDate(), dateRange: null, amountCents: amount, accountId: account.id, fromAccountId: null, toAccountId: null, debtAccountId: null, categoryId: null, relatedId: null, incomeSource: 'other', note: reason.value, originalText: `实际余额 ${actual.value}`, sourceQuote: '', corrections: [] };
+      const valuation = valuationFor(this.config(), accountCurrency(account)); if (valuation) tx.valuation = valuation;
       const before = freedom(this.state(), this.config(), localDate()); const batch = await this.host.repo.commit([{ type: 'transaction.put', expected: 0, value: tx }], id(), '对账校准', batchId); d.close(); this.changed(before, batch.id);
     }), 'll-primary');
   }
@@ -432,7 +535,7 @@ export class LedgerUI {
     input(form, '预计残值（元）', decimal(cost.residualCents), 'text', v => { try { cost.residualCents = cents(v); } catch { cost.residualCents = NaN; } });
     input(form, '开始日', cost.start, 'date', v => { cost.start = v; }); input(form, '结束日（不包含）', cost.end ?? '', 'date', v => { cost.end = v || null; }); input(form, '停用日（不包含）', cost.stoppedOn ?? '', 'date', v => { cost.stoppedOn = v || null; });
     check(d.node, '未来计划自动续费', cost.autoRenew, v => { cost.autoRenew = v; });
-    if (!existing) select(d.node, '关联已有购买（可不选）', cost.transactionId ?? '', [['', '仅登记成本，不新增现金交易'], ...[...this.state().transactions.values()].filter(t => t.kind === 'expense' && ![...this.state().costs.values()].some(c => c.transactionId === t.id)).map(t => [t.id, `${t.date} ${t.note} ${money(t.amountCents)}`] as [string, string])], v => { cost.transactionId = v || null; if (v) { cost.amountCents = this.state().transactions.get(v)!.amountCents; purchase.value = decimal(cost.amountCents); purchase.disabled = true; } else purchase.disabled = false; });
+    if (!existing) select(d.node, '关联已有购买（可不选）', cost.transactionId ?? '', [['', '仅登记成本，不新增现金交易'], ...[...this.state().transactions.values()].filter(t => t.kind === 'expense' && ![...this.state().costs.values()].some(c => c.transactionId === t.id)).map(t => [t.id, `${t.date} ${t.note} ${money(t.amountCents)}`] as [string, string])], v => { cost.transactionId = v || null; if (v) { cost.amountCents = baseAmount(this.state().transactions.get(v)!); purchase.value = decimal(cost.amountCents); purchase.disabled = true; } else purchase.disabled = false; });
     const explanation = input(d.node, '调整说明', '', 'text');
     button(d.node, '保存项目', () => this.action(async () => {
       if (existing) requireThat(explanation.value.trim(), '请填写调整说明，保留历史');
@@ -451,7 +554,7 @@ export class LedgerUI {
       el('summary', '', `待处理草稿（${pending.length}）`, details);
       for (const draft of pending) {
         const row = el('div', 'll-pending-row', '', details);
-        button(row, `继续草稿：${draft.text.slice(0, 28) || '手动记录'}`, () => this.openDraft(draft.id));
+        button(row, `继续草稿：${draft.text.slice(0, 28) || (draft.inputMode === 'screenshots' ? '截图账目' : '手动记录')}`, () => this.openDraft(draft.id));
         button(row, '丢弃草稿', () => this.action(async () => { await this.host.repo.discardDraft(draft); this.renderPending(); this.host.notice('草稿已按 Obsidian 的删除偏好移入回收站，已保存账目保留'); }), 'll-ghost');
       }
     }

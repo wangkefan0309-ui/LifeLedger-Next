@@ -1,8 +1,12 @@
 export type DateISO = string;
+export type Currency = 'CNY' | 'USD' | 'HKD';
+export interface ExchangeRates { asOf: DateISO; fetchedAt: string; source: string; USD: number; HKD: number }
+export interface Valuation { currency: Currency; rate: number; asOf: DateISO; source: string }
 export type Kind = 'income' | 'expense' | 'transfer' | 'refund' | 'borrow' | 'repayment' | 'lend' | 'collect' | 'adjustment';
 export interface Account {
   id: string; name: string; kind: 'asset' | 'liability'; openingCents: number;
   openingDate: DateISO; freedomBps: number; aliases: string[];
+  currency?: Currency; displayCurrency?: Currency | null;
 }
 export interface Category { id: string; name: string; kind: 'income' | 'expense'; living: boolean }
 export interface Config {
@@ -10,6 +14,7 @@ export interface Config {
   observationStart: DateISO; estimateDailyCents: number | null; reservedCents: number;
   birthDate: DateISO | null; displayEnd: DateISO; showPast: boolean;
   sound: boolean; animation: 'full' | 'short' | 'off';
+  exchangeRates?: ExchangeRates;
 }
 export interface Transaction {
   id: string; version: number; batchId: string; draftId: string | null; rowId: string | null;
@@ -18,6 +23,8 @@ export interface Transaction {
   toAccountId: string | null; debtAccountId: string | null; categoryId: string | null;
   relatedId: string | null; incomeSource: 'active' | 'passive' | 'other';
   note: string; sourceQuote: string; originalText: string; corrections: string[];
+  valuation?: Valuation;
+  exchange?: { receivedCents: number; valuation: Valuation };
 }
 export interface Cost {
   id: string; version: number; batchId: string; transactionId: string | null;
@@ -47,9 +54,13 @@ export interface DraftRow {
   categoryId: string; relatedId: string; incomeSource: Transaction['incomeSource']; note: string;
   sourceQuote: string; amountQuote: string; issues: string[]; reviewed: boolean; edited: boolean;
   usedDefault: boolean; cost: { name: string; kind: Cost['kind']; start: string; end: string; residual: string; autoRenew: boolean } | null;
+  currency?: Currency; rateCny?: string; receivedAmount?: string; receivedAmountQuote?: string;
+  imageId?: string;
 }
 export interface Draft {
   origin?: 'home' | 'editor';
+  inputMode?: 'text' | 'screenshots';
+  imageEvidence?: { id: string; text: string }[];
   version: 1; id: string; revision: number; text: string; textHistory: string[]; submittedDate: string; timezone: string;
   rows: DraftRow[]; excluded: { source_quote: string; reason: string }[];
   completeDates: string[]; status: 'editing' | 'requesting' | 'failed' | 'review' | 'saved';

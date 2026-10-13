@@ -1,5 +1,6 @@
 import { daysBetween, id, localDate, sha256, validDate } from './primitives';
 import { emptyState, type Batch, type Config, type Cost, type LedgerEvent, type LedgerState, type Transaction } from './types';
+import { accountCurrency, baseAmount, convertMoney, isCurrency, transactionCurrency, validateRates, validateValuation } from './currency';
 
 export function requireThat(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -8,10 +9,14 @@ const safeMoney = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(
 export function validateConfig(c: Config): void {
   requireThat(c && c.version === 1 && Array.isArray(c.accounts) && Array.isArray(c.categories), '配置格式或版本错误');
   const ids = new Set<string>(); const names = new Set<string>();
+  requireThat(c.exchangeRates === undefined || validateRates(c.exchangeRates), '汇率缓存格式、日期或数值错误');
   for (const a of c.accounts) {
     requireThat(a && typeof a.id === 'string' && a.id.length > 0 && !ids.has(a.id), '账户 ID 重复或缺失'); ids.add(a.id);
     requireThat(typeof a.name === 'string' && a.name.trim() && ['asset', 'liability'].includes(a.kind), '账户名称或类型错误');
     requireThat(safeMoney(a.openingCents) && validDate(a.openingDate), '账户期初余额或生效日期错误');
+    requireThat(a.currency === undefined || isCurrency(a.currency), '账户币种仅支持人民币、美元和港币');
+    requireThat(a.displayCurrency === undefined || a.displayCurrency === null || isCurrency(a.displayCurrency), '账户折算币种错误');
+    convertMoney(a.openingCents, accountCurrency(a), 'CNY', c);
     requireThat(a.kind !== 'liability' || a.openingCents >= 0, '期初负债不能为负');
     requireThat(Number.isInteger(a.freedomBps) && a.freedomBps >= 0 && a.freedomBps <= 10000, '可用比例必须在 0 到 100%');
     requireThat(Array.isArray(a.aliases) && a.aliases.every(x => typeof x === 'string' && x.trim()), '账户别名错误');
@@ -38,17 +43,26 @@ export function validateTransaction(t: Transaction, config: Config, state: Ledge
   requireThat(safeMoney(t.amountCents) && (t.kind === 'adjustment' ? t.amountCents !== 0 : t.amountCents > 0), '金额必须为整数分且大于零；对账调整可为负');
   requireThat(typeof t.note === 'string' && typeof t.sourceQuote === 'string' && typeof t.originalText === 'string' && Array.isArray(t.corrections) && t.corrections.every(x => typeof x === 'string'), '交易备注或原文格式错误');
   requireThat(['active', 'passive', 'other'].includes(t.incomeSource), '收入来源错误');
+  requireThat(t.valuation === undefined || validateValuation(t.valuation), '交易汇率快照错误');
+  baseAmount(t);
   const account = (aid: string | null, kind: 'asset' | 'liability') => {
     const a = config.accounts.find(x => x.id === aid); requireThat(a && a.kind === kind, `请明确${kind === 'asset' ? '资产' : '负债'}账户`); return a;
   };
   if (['transfer', 'lend', 'collect'].includes(t.kind)) {
-    account(t.fromAccountId, 'asset'); account(t.toAccountId, 'asset');
+    const from = account(t.fromAccountId, 'asset'), to = account(t.toAccountId, 'asset');
+    requireThat(transactionCurrency(t) === accountCurrency(from), '转出金额币种与账户不一致');
+    if (accountCurrency(from) !== accountCurrency(to)) {
+      requireThat(t.kind === 'transfer' && t.exchange && safeMoney(t.exchange.receivedCents) && t.exchange.receivedCents > 0 && validateValuation(t.exchange.valuation) && t.exchange.valuation.currency === accountCurrency(to), '跨币种转账须核对实际到账金额及币种；借出和收回本金暂须同币种');
+      baseAmount({ ...t, amountCents: t.exchange.receivedCents, valuation: t.exchange.valuation });
+    } else requireThat(t.exchange === undefined, '同币种转账不能带第二笔不同到账金额');
     requireThat(t.fromAccountId !== t.toAccountId, '转入和转出不能是同一账户');
     requireThat(t.accountId === null && t.debtAccountId === null && t.categoryId === null && t.relatedId === null, '转账不能同时指定收支账户、分类或退款关联');
   } else {
-    account(t.accountId, 'asset');
+    const asset = account(t.accountId, 'asset');
+    requireThat(transactionCurrency(t) === accountCurrency(asset), '交易金额币种与账户不一致');
+    requireThat(t.exchange === undefined, '普通收支不能带换汇到账金额');
     requireThat(t.fromAccountId === null && t.toAccountId === null, '普通账目不能带转账两端');
-    if (t.kind === 'borrow' || t.kind === 'repayment') account(t.debtAccountId, 'liability');
+    if (t.kind === 'borrow' || t.kind === 'repayment') requireThat(accountCurrency(account(t.debtAccountId, 'liability')) === accountCurrency(asset), '借还本金的资产与负债账户须使用相同币种');
     else requireThat(t.debtAccountId === null, '普通账目不能带负债账户');
     if (t.categoryId !== null) {
       const category = config.categories.find(c => c.id === t.categoryId);
@@ -58,6 +72,7 @@ export function validateTransaction(t: Transaction, config: Config, state: Ledge
     if (t.kind === 'refund' && t.relatedId !== null) {
       const original = state.transactions.get(t.relatedId);
       requireThat(original && original.kind === 'expense' && original.date <= t.date, '退款关联必须是已发生的支出');
+      requireThat(transactionCurrency(original) === transactionCurrency(t), '关联退款币种须与原消费相同');
       requireThat(original.categoryId === t.categoryId, '退款分类必须与原消费一致');
       const already = [...state.transactions.values()].filter(x => x.id !== t.id && x.kind === 'refund' && x.relatedId === t.relatedId).reduce((s, x) => s + x.amountCents, 0);
       requireThat(already + t.amountCents <= original.amountCents, '累计退款超过原消费金额');
@@ -73,7 +88,7 @@ export function validateCost(c: Cost, config: Config, state: LedgerState): void 
   requireThat(typeof c.autoRenew === 'boolean' && Array.isArray(c.adjustmentNotes) && c.adjustmentNotes.every(x => typeof x === 'string'), '成本历史格式错误');
   if (c.transactionId !== null) {
     const tx = state.transactions.get(c.transactionId);
-    requireThat(tx && tx.kind === 'expense' && tx.amountCents === c.amountCents, '关联购买不存在，或成本金额与购买款不同');
+    requireThat(tx && tx.kind === 'expense' && baseAmount(tx) === c.amountCents, '关联购买不存在，或人民币成本金额与购买款折算不同');
     requireThat(![...state.costs.values()].some(x => x.id !== c.id && x.transactionId === c.transactionId), '这笔购买已经有成本项目');
   }
   if (c.kind === 'subscription' && c.end && !c.stoppedOn) requireThat(![...state.costs.values()].some(x => x.id !== c.id && x.kind === 'subscription' && x.name === c.name && x.end && !x.stoppedOn && x.start < c.end! && x.end > c.start), '同名订阅服务期重叠，请核对续费开始日');
@@ -107,7 +122,7 @@ export function applyEvents(state: LedgerState, events: LedgerEvent[], config: C
   }
   // Check final state so a transaction and its related project can be corrected atomically.
   for (const tx of next.transactions.values()) validateTransaction(tx, config, next, today);
-  requireThat(Number.isSafeInteger([...next.transactions.values()].reduce((sum, t) => sum + Math.abs(t.amountCents), config.accounts.reduce((sum, a) => sum + Math.abs(a.openingCents), 0))), '累计金额超出安全整数范围，批次未保存');
+  requireThat(Number.isSafeInteger([...next.transactions.values()].reduce((sum, t) => sum + Math.abs(t.amountCents) + (t.exchange?.receivedCents ?? 0), config.accounts.reduce((sum, a) => sum + Math.abs(a.openingCents), 0))), '累计金额超出安全整数范围，批次未保存');
   for (const cost of next.costs.values()) validateCost(cost, config, next);
   for (const a of config.accounts.filter(x => x.kind === 'liability')) {
     let amount = a.openingCents;

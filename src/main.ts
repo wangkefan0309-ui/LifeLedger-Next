@@ -2,7 +2,8 @@ import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, Wo
 import { Extractor, apiUrl, type ApiSettings } from './api/extractor';
 import { cents, decimal, localDate, sha256 } from './core/primitives';
 import { requireThat } from './core/ledger';
-import type { Config } from './core/types';
+import type { Config, ExchangeRates } from './core/types';
+import { parseReferenceRates, RATES_URL } from './api/exchange-rates';
 import { ObsidianIO } from './storage/obsidian-io';
 import { Repository, validRoot } from './storage/repository';
 import { LedgerUI } from './ui/app';
@@ -11,6 +12,14 @@ interface DeviceSettings { root: string; api: ApiSettings }
 export default class LifeLedgerPlugin extends Plugin {
   repo!: Repository; deviceSettings!: DeviceSettings; extractor!: Extractor;
   private switchingRoot = false;
+  private ratesPromise?: Promise<ExchangeRates>;
+  private ratesAttemptDay = '';
+  ratesError = '';
+  referenceTransport = async () => {
+    const response = await requestUrl({ url: RATES_URL, method: 'GET', throw: false });
+    requireThat(response.status >= 200 && response.status < 300, `参考汇率服务返回 HTTP ${response.status}`);
+    return response.json as unknown;
+  };
   async onload() {
     const data = await this.loadData();
     this.deviceSettings = { root: typeof data?.root === 'string' ? data.root : 'LifeLedger', api: { baseUrl: typeof data?.api?.baseUrl === 'string' ? data.api.baseUrl : 'https://api.deepseek.com', model: typeof data?.api?.model === 'string' ? data.api.model : 'deepseek-flash', secretId: `lifeledger-next-${sha256(this.app.vault.getName()).slice(0, 16)}` } };
@@ -52,7 +61,25 @@ export default class LifeLedgerPlugin extends Plugin {
   async open(): Promise<LedgerView> {
     let leaf = this.app.workspace.getLeavesOfType(VIEW)[0];
     if (!leaf) { leaf = this.app.workspace.getLeaf('tab'); await leaf.setViewState({ type: VIEW, active: true }); }
-    await this.app.workspace.revealLeaf(leaf); return leaf.view as LedgerView;
+    await this.app.workspace.revealLeaf(leaf);
+    const c = this.repo.config, needed = c.accounts.some(a => (a.currency ?? 'CNY') !== 'CNY' || (a.displayCurrency && a.displayCurrency !== 'CNY'));
+    if (needed && this.ratesAttemptDay !== localDate() && (!c.exchangeRates || localDate(new Date(c.exchangeRates.fetchedAt)) !== localDate())) void this.updateExchangeRates().catch(() => undefined);
+    return leaf.view as LedgerView;
+  }
+  async updateExchangeRates(): Promise<ExchangeRates> {
+    if (this.ratesPromise) return this.ratesPromise;
+    const repository = this.repo; this.ratesAttemptDay = localDate(); this.ratesError = '';
+    this.ratesPromise = (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const json = await Promise.race([this.referenceTransport(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('参考汇率更新超时，沿用已有缓存')), 15000); })]);
+        const rates = parseReferenceRates(json);
+        requireThat(this.repo === repository, '账本目录已切换，本次汇率未写入新目录');
+        await repository.saveConfig({ ...repository.config, exchangeRates: rates }); await this.refresh(); return rates;
+      } catch (error) { this.ratesError = `${(error as Error).message}；可使用缓存或手动汇率`; await this.refresh(); throw error; }
+      finally { if (timer) clearTimeout(timer); this.ratesPromise = undefined; }
+    })();
+    return this.ratesPromise;
   }
   openSettings() {
     // Obsidian's settings window is not part of its public typings.
@@ -98,7 +125,7 @@ class LedgerView extends ItemView {
   async onOpen() { await this.reopen(); }
   async reopen() {
     await this.ui?.destroy(); this.contentEl.empty(); await this.plugin.repo.settled(); await this.plugin.repo.load();
-    this.ui = new LedgerUI(this.contentEl, { repo: this.plugin.repo, extractor: this.plugin.extractor, api: this.plugin.deviceSettings.api, key: () => this.plugin.getKey(), notice: message => new Notice(message), changed: () => undefined, openSettings: () => this.plugin.openSettings(), openFile: path => { const file = this.app.vault.getAbstractFileByPath(path); if (file instanceof TFile) void this.app.workspace.getLeaf('tab').openFile(file); } });
+    this.ui = new LedgerUI(this.contentEl, { repo: this.plugin.repo, extractor: this.plugin.extractor, api: this.plugin.deviceSettings.api, key: () => this.plugin.getKey(), notice: message => new Notice(message), changed: () => undefined, refreshRates: () => this.plugin.updateExchangeRates(), ratesError: () => this.plugin.ratesError, openSettings: () => this.plugin.openSettings(), openFile: path => { const file = this.app.vault.getAbstractFileByPath(path); if (file instanceof TFile) void this.app.workspace.getLeaf('tab').openFile(file); } });
   }
   async onClose() { await this.ui?.destroy(); this.ui = undefined; }
 }
@@ -131,10 +158,10 @@ class LedgerSettings extends PluginSettingTab {
       await this.plugin.saveData({ ...this.plugin.deviceSettings, api }); Object.assign(this.plugin.deviceSettings.api, api);
     };
     new Setting(containerEl).setName('API 服务地址').addText(t => t.setValue(api.baseUrl).onChange(v => { api.baseUrl = v.trim(); }));
-    new Setting(containerEl).setName('模型 ID').addText(t => t.setValue(api.model).onChange(v => { api.model = v.trim(); }));
+    new Setting(containerEl).setName('模型 ID').setDesc('截图记账沿用同一连接，模型需支持图片输入及 JSON 输出。').addText(t => t.setValue(api.model).onChange(v => { api.model = v.trim(); }));
     let pendingKey = '', keyInput: HTMLInputElement;
     const keySetting = new Setting(containerEl).setName('API 密钥').setDesc(this.plugin.getKey() ? '已有设备密钥，保存在 Obsidian SecretStorage；不进入账本与导出。' : '在这里填写自己的密钥，保存到设备密钥库。').addText(t => { keyInput = t.inputEl; t.inputEl.type = 'password'; t.setPlaceholder('填写新密钥').onChange(v => { pendingKey = v.trim(); }); }).addButton(b => b.setButtonText('保存密钥').onClick(() => { if (pendingKey) { this.plugin.app.secretStorage.setSecret(api.secretId, pendingKey); pendingKey = ''; keyInput.value = ''; keySetting.setDesc('已有设备密钥，保存在 Obsidian SecretStorage；不进入账本与导出。'); new Notice('密钥已保存'); } }));
-    new Setting(containerEl).setName('API 连接').setDesc('修改后点击保存才生效；检查连接不保存修改，只请求模型列表。整理时发送本次原文、账户名称与分类。').addButton(b => b.setButtonText('保存连接配置').onClick(() => { void this.run(async () => { await saveApi(); new Notice('配置已保存'); }); })).addButton(b => b.setButtonText('检查连接').onClick(() => { void this.run(async () => { new Notice(await this.plugin.extractor.checkConnection(api, this.plugin.getKey())); }); }));
+    new Setting(containerEl).setName('API 连接').setDesc('修改后点击保存才生效；检查连接只请求模型列表，不证明图片识别能力。整理发送本次原文及必要账户分类；点击识别截图会临时发送所选图片。').addButton(b => b.setButtonText('保存连接配置').onClick(() => { void this.run(async () => { await saveApi(); new Notice('配置已保存'); }); })).addButton(b => b.setButtonText('检查连接').onClick(() => { void this.run(async () => { new Notice(await this.plugin.extractor.checkConnection(api, this.plugin.getKey())); }); }));
     new Setting(containerEl).setName('成本与人生亮格').setHeading();
     const c: Config = structuredClone(this.plugin.repo.config);
     const configFingerprint = sha256(JSON.stringify(c));

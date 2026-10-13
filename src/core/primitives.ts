@@ -55,7 +55,7 @@ export function blankRow(today = localDate()): DraftRow {
 }
 /** Strict conversion only for unambiguous money quotes. Unsupported forms remain reviewable issues. */
 export function quotedCents(quote: string): number | null {
-  let q = quote.trim().replace(/[人民币元块钱整]/g, '');
+  let q = quote.trim().replace(/人民币|美元|美金|港元|港币|USD|HKD|CNY|RMB|US\$|HK\$/gi, '').replace(/[元块钱整]/g, '').trim();
   if (/^(\d+(?:\.\d{1,2})?)$/.test(q)) return cents(q);
   if (/[几多来约上下左右]/.test(q)) return null;
   const digits: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };

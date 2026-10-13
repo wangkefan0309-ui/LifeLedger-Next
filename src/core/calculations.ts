@@ -1,9 +1,10 @@
 import { addDays, daysBetween, exactRatio } from './primitives';
 import type { Config, Cost, LedgerState, Transaction } from './types';
+import { accountCurrency, baseAmount, convertMoney, RATE_SCALE, roundedRatio } from './currency';
 
 export function affects(t: Transaction, accountId: string): number {
   if (t.fromAccountId === accountId) return -t.amountCents;
-  if (t.toAccountId === accountId) return t.amountCents;
+  if (t.toAccountId === accountId) return t.exchange?.receivedCents ?? t.amountCents;
   if (t.debtAccountId === accountId) return t.kind === 'borrow' ? t.amountCents : -t.amountCents;
   if (t.accountId !== accountId) return 0;
   return ['expense', 'repayment'].includes(t.kind) ? -t.amountCents : t.amountCents;
@@ -15,17 +16,19 @@ export function funds(state: LedgerState, c: Config, until: string) {
   const bs = balances(state, c, until); let assets = 0, liabilities = 0, available = 0, openingAvailable = 0;
   for (const a of c.accounts) {
     const n = bs.get(a.id); if (n === null || n === undefined) continue;
-    if (a.kind === 'asset') { assets += n; available += exactRatio(n, a.freedomBps, 10000); openingAvailable += exactRatio(a.openingCents, a.freedomBps, 10000); }
-    else { liabilities += n; openingAvailable -= a.openingCents; }
+    const base = convertMoney(n, accountCurrency(a), 'CNY', c), opening = convertMoney(a.openingCents, accountCurrency(a), 'CNY', c);
+    if (a.kind === 'asset') { assets += base; available += exactRatio(base, a.freedomBps, 10000); openingAvailable += exactRatio(opening, a.freedomBps, 10000); }
+    else { liabilities += base; openingAvailable -= opening; }
   }
   return { assets, liabilities, net: assets - liabilities, available: available - liabilities - c.reservedCents, openingAvailable: openingAvailable - c.reservedCents, balances: bs };
 }
 export function totals(ts: Transaction[]) {
   let income = 0, expense = 0, refund = 0, passive = 0;
   for (const t of ts) {
-    if (t.kind === 'income') { income += t.amountCents; if (t.incomeSource === 'passive') passive += t.amountCents; }
-    if (t.kind === 'expense') expense += t.amountCents;
-    if (t.kind === 'refund') refund += t.amountCents;
+    const amount = baseAmount(t);
+    if (t.kind === 'income') { income += amount; if (t.incomeSource === 'passive') passive += amount; }
+    if (t.kind === 'expense') expense += amount;
+    if (t.kind === 'refund') refund += amount;
   }
   return { income, expense, refund, netExpense: expense - refund, surplus: income - expense + refund, passive };
 }
@@ -37,10 +40,10 @@ export function livingCost(state: LedgerState, c: Config, start: string, end: st
   let net = 0;
   for (const t of filterTransactions(state, start, end)) {
     if (t.dateRange) continue;
-    if (t.kind === 'expense' && living(t)) net += t.amountCents;
+    if (t.kind === 'expense' && living(t)) net += baseAmount(t);
     if (t.kind === 'refund' && t.relatedId) {
       const original = state.transactions.get(t.relatedId);
-      if (original && original.date >= start && original.date <= end && !original.dateRange && living(original)) net -= t.amountCents;
+      if (original && original.date >= start && original.date <= end && !original.dateRange && living(original)) net -= original.valuation ? roundedRatio(t.amountCents, original.valuation.rate, RATE_SCALE) : t.amountCents;
     }
   }
   return net;
