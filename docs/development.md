@@ -48,6 +48,8 @@ npm run verify:ui
 
 ## 移动或改名源码目录
 
+本节讨论开发用的源码工程。用户 Vault 内的 `LifeLedger/` 数据目录按 [账本移动指南](guide.md)处理，`.obsidian/plugins/lifeledger-next/` 安装目录保持插件ID。
+
 源码工程可整体移动或改名，保留内部结构及隐藏的 `.git` 目录后，Git 历史与远端关联仍在。构建和打包从工程的新位置执行，已复制到用户日常 Vault 的插件不会随源码目录移动。
 
 移动前关闭工程内的试验库和占用旧目录的终端，移动后在开发工具里重新打开新位置。Obsidian 注册的试验库路径、已有快捷方式和历史验证记录中的绝对路径仍指向原位置；使用试验库时需在 Obsidian 中重新选择新路径。已有 `validation-vault/review-profile` 保留旧注册路径，`打开试验库.cmd` 不会自动迁移这条记录。已安装插件的目录 ID 仍须为 `.obsidian/plugins/lifeledger-next`。
