@@ -1,7 +1,7 @@
 {
   "id": "lifeledger-next",
   "name": "LifeLedger",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "minAppVersion": "1.11.4",
   "description": "在本地记账，查看多账户、日历、每日成本与人生亮格。",
   "author": "Silas",

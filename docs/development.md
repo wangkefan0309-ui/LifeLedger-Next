@@ -36,6 +36,8 @@ npm run verify:ui
 
 需要已安装并启动过 Obsidian，拥有可读的 `.asar` 应用包。隔离 UI 启停脚本当前按 Windows 实现；macOS／Linux 的 UI 自动化未验收。不要把测试路径改成日常 Vault。CI 在 Linux 运行核心、构建与打包，不运行桌面实机脚本。
 
+`verify:ui` 在 0.1.7 新增账户排序检查，包含取消、置顶／上下移动、键盘操作、两页同步、旧窗口冲突、改名保留位置、新账户追加、明暗窄窗口及插件重启。核心测试核对排序后的资金、笔记、交易及备份恢复，沿用既有账户数组顺序，无需数据迁移。
+
 ## 源码与安装包
 
 源码仓库包含 `src/`、`tests/`、`scripts/`、文档和虚拟截图。插件 ZIP 包含运行文件、使用文档、截图、许可证和来源说明，不包含开发依赖、源码测试环境、Vault、设备配置或密钥。直接下载源码 ZIP 后还需要构建；普通用户从 GitHub Releases 下载插件 ZIP。
@@ -43,6 +45,12 @@ npm run verify:ui
 人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，使用预发布标记，保留未完成的真实链路验收说明。
 
 作者及维护者为 Silas。Release 标签应指向已提交、已通过检查的源码；上传附件后核对远端大小和 SHA-256。README 提供对应版本的 ZIP 下载链接，预发布不依赖 `/releases/latest` 跳转。旧 Obsidian-LifeLedger 已归档，迁移提示指向本仓库；未单独发布的本地版本在 CHANGELOG 明确标注。
+
+## 移动或改名源码目录
+
+源码工程可整体移动或改名，保留内部结构及隐藏的 `.git` 目录后，Git 历史与远端关联仍在。构建和打包从工程的新位置执行，已复制到用户日常 Vault 的插件不会随源码目录移动。
+
+移动前关闭工程内的试验库和占用旧目录的终端，移动后在开发工具里重新打开新位置。Obsidian 注册的试验库路径、已有快捷方式和历史验证记录中的绝对路径仍指向原位置；使用试验库时需在 Obsidian 中重新选择新路径。已有 `validation-vault/review-profile` 保留旧注册路径，`打开试验库.cmd` 不会自动迁移这条记录。已安装插件的目录 ID 仍须为 `.obsidian/plugins/lifeledger-next`。
 
 ## 提交前复核
 

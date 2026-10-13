@@ -45,6 +45,33 @@ test('JSON导出恢复到空账本；恢复后重开可再更正；不覆盖已�
 test('数据目录阻止路径穿越；替换数据块不接受多个或不完整块', () => {
   for (const root of ['../foo', 'C:/foo', '/root', '.obsidian', '账本/../笔记']) assert.throws(() => validRoot(root)); assert.equal(validRoot('财务/账本'), '财务/账本'); assert.throws(() => structuredBlock('bad'));
 });
+
+test('账户排序保存、重开和备份恢复保持顺序及原账户、账目、默认账户与资金', async () => {
+  const io = new MemoryIO(), repo = new Repository(io, '排序账本', () => TODAY); await repo.load(); await repo.saveConfig(config());
+  await repo.commit([{ type: 'transaction.put', expected: 0, value: tx('expense', 800) }], 'order-test', '虚拟消费');
+  const before = repo.exportBackup(), assets = funds(repo.state, repo.config, TODAY).assets;
+  io.files.set('排序账本/配置.md', io.files.get('排序账本/配置.md')! + '\n账户使用笔记');
+  const accounts = [...repo.config.accounts].reverse(); await repo.saveConfig({ ...repo.config, accounts }, sha256(JSON.stringify(repo.config)));
+  assert.ok(io.files.get('排序账本/配置.md')!.endsWith('账户使用笔记'));
+  const reopened = new Repository(io, '排序账本', () => TODAY); await reopened.load();
+  assert.deepEqual(reopened.config, { ...before.config, accounts }); assert.equal(funds(reopened.state, reopened.config, TODAY).assets, assets);
+  assert.deepEqual(reopened.exportBackup().batches, before.batches);
+  const restored = new Repository(io, '排序恢复', () => TODAY); await restored.load(); await restored.restoreBackup(reopened.exportBackup());
+  assert.deepEqual(restored.config, reopened.config); assert.deepEqual([...restored.state.transactions], [...reopened.state.transactions]);
+  assert.equal(funds(restored.state, restored.config, TODAY).assets, assets);
+});
+
+test('账户排序写盘失败或旧窗口保存，不覆盖已保存配置和账户变更', async () => {
+  const io = new MemoryIO(), repo = new Repository(io, '排序账本', () => TODAY); await repo.load(); await repo.saveConfig(config());
+  const original = structuredClone(repo.config), fingerprint = sha256(JSON.stringify(original));
+  const process = io.process.bind(io); io.process = async () => { throw new Error('模拟配置写入失败'); };
+  await assert.rejects(repo.saveConfig({ ...original, accounts: [...original.accounts].reverse() }, fingerprint));
+  assert.deepEqual(repo.config, original); io.process = process;
+  const reopened = new Repository(io, '排序账本', () => TODAY); await reopened.load(); assert.deepEqual(reopened.config, original);
+  await repo.saveConfig({ ...original, accounts: original.accounts.map(a => ({ ...a, name: a.name + '新名称' })) });
+  await assert.rejects(repo.saveConfig({ ...original, accounts: [...original.accounts].reverse() }, fingerprint), /其他窗口/);
+  assert.ok(repo.config.accounts.every(a => a.name.endsWith('新名称')));
+});
 test('冻结API协议：一次请求整理整段，无密钥进请求体或回复；空/截断不能成草稿', async () => {
   const draft = newDraft('早餐八块', TODAY), settings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', secretId: 'key' }, reply = { version: 2, entries: [apiEntry()], excluded: [], complete_dates: [] };
   let count = 0;

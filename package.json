@@ -1,6 +1,6 @@
 {
   "name": "lifeledger-next",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "本地账本、口播草稿与财富自由指南灯",
   "type": "module",

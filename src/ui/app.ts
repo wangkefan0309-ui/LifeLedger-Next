@@ -1,5 +1,5 @@
 import { affects, baseline, costOn, dayStatus, filterTransactions, freedom, series, totals } from '../core/calculations';
-import { addDays, cents, daysBetween, decimal, id, localDate, money, validDate } from '../core/primitives';
+import { addDays, cents, daysBetween, decimal, id, localDate, money, sha256, validDate } from '../core/primitives';
 import { applyEvents, requireThat } from '../core/ledger';
 import { newDraft } from '../core/drafts';
 import type { Account, Config, Cost, Currency, Draft, ExchangeRates, LedgerEvent, Transaction } from '../core/types';
@@ -180,6 +180,7 @@ export class LedgerUI {
     const overview = el('section', 'll-asset-overview', '', parent); overview.setAttribute('aria-label', '当前资产与账户余额');
     const top = el('div', 'll-section-heading', '', overview); el('h2', '', '我的资产', top);
     const actions = el('div', 'll-asset-actions', '', top); el('span', 'll-muted', `截至 ${today.replaceAll('-', '.')}`, actions);
+    if (c.accounts.length > 1) button(actions, '账户排序', () => this.accountOrder(), 'll-ghost');
     button(actions, '⇄ 换汇', () => this.exchangeForm(), 'll-ghost ll-fx-button');
     const summary = el('div', `ll-stats ll-asset-cards${c.accounts.some(a => a.kind === 'asset') ? '' : ' is-empty'}`, '', overview);
     const total = this.stat(summary, '总资产 · 所有资产账户合计', `¥${money(f.assets)}`, `负债 ¥${money(f.liabilities)} · 净资产 ¥${money(f.net)}`); total.classList.add('ll-asset-total');
@@ -462,6 +463,47 @@ export class LedgerUI {
     if (!rows.length) el('p', 'll-empty', '这个范围还没有已记录账目。', history);
     if (rows.length > 20) button(history, '按月查看历史流水', () => { this.page = '账本'; this.accountFilter = selected?.id ?? ''; this.categoryFilter = ''; this.selectedDay = ''; this.render(); }, 'll-ghost');
   }
+  private accountOrder() {
+    const original = structuredClone(this.config()), order = original.accounts.map(a => a.id);
+    const d = dialog(this.overlays, '账户排序'); d.node.classList.add('ll-account-order-dialog');
+    el('p', 'll-muted', '把常用钱包移到前面，保存后首页和账户页同步这个顺序。', d.node);
+    const list = el('ol', 'll-account-order-list', '', d.node);
+    const status = el('p', 'll-muted', '', d.node); status.setAttribute('role', 'status');
+    let saving = false;
+    const render = (focusId?: string, focusAction?: string) => {
+      list.replaceChildren();
+      order.forEach((accountId, index) => {
+        const account = original.accounts.find(a => a.id === accountId)!;
+        const row = el('li', 'll-account-order-row', '', list); row.dataset.accountId = accountId;
+        el('span', 'll-account-order-name', `${account.name}${account.kind === 'liability' ? ' · 负债' : ''}`, row);
+        const controls = el('div', 'll-account-order-controls', '', row);
+        for (const [label, target] of [['置顶', 0], ['上移', index - 1], ['下移', index + 1]] as const) {
+          const move = button(controls, label, () => {
+            if (saving) return;
+            order.splice(index, 1); order.splice(target, 0, accountId);
+            status.textContent = `已将${account.name}移到第 ${target + 1} 位，保存后生效。`;
+            render(accountId, label);
+          }, 'll-ghost');
+          move.setAttribute('aria-label', `${label}${account.name}`); move.dataset.action = label;
+          move.disabled = saving || target === index || target < 0 || target >= order.length;
+        }
+      });
+      if (focusId) {
+        const row = Array.from(list.children).find(n => (n as HTMLElement).dataset.accountId === focusId);
+        const controls = Array.from(row?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+        (controls.find(b => b.dataset.action === focusAction && !b.disabled) ?? controls.find(b => !b.disabled))?.focus();
+      }
+    };
+    const save = button(d.node, '保存顺序', () => this.action(async () => {
+      saving = true; save.disabled = true; d.node.setAttribute('aria-busy', 'true'); render();
+      try {
+        const current = this.config();
+        await this.host.repo.saveConfig({ ...current, accounts: order.map(accountId => current.accounts.find(a => a.id === accountId)!) }, sha256(JSON.stringify(original)));
+        d.close(); this.render(); this.host.notice('账户顺序已保存');
+      } finally { saving = false; save.disabled = false; d.node.removeAttribute('aria-busy'); if (d.node.isConnected) render(); }
+    }), 'll-primary');
+    render();
+  }
   private accountForm(existing?: Account) {
     const d = dialog(this.overlays, existing ? '修改账户' : '添加账户');
     const account: Account = existing ? structuredClone(existing) : { id: id(), name: '', kind: 'asset', openingCents: 0, openingDate: localDate(), freedomBps: 10000, aliases: [], currency: 'CNY', displayCurrency: null };
@@ -490,7 +532,8 @@ export class LedgerUI {
     button(d.node, '保存账户', () => this.action(async () => {
       requireThat(account.openingDate <= localDate(), '期初余额不能设在未来');
       if (account.displayCurrency === accountCurrency(account)) account.displayCurrency = null;
-      const c: Config = { ...this.config(), exchangeRates: rateInputs.get(), accounts: [...this.config().accounts.filter(a => a.id !== account.id), account], defaultAccountId: defaultAccount ? account.id : this.config().defaultAccountId === account.id ? null : this.config().defaultAccountId };
+      const accounts = this.config().accounts.some(a => a.id === account.id) ? this.config().accounts.map(a => a.id === account.id ? account : a) : [...this.config().accounts, account];
+      const c: Config = { ...this.config(), exchangeRates: rateInputs.get(), accounts, defaultAccountId: defaultAccount ? account.id : this.config().defaultAccountId === account.id ? null : this.config().defaultAccountId };
       await this.host.repo.saveConfig(c); d.close(); this.render();
     }), 'll-primary');
   }
