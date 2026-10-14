@@ -21,10 +21,11 @@ export class Stage {
     this.audio = new RitualAudio(); this.audio.setMuted(!config.sound);
     this.grid = new LifeGrid(canvas, this.audio);
     this.updatePalette();
+    const themeRoot = host.closest('.lifeledger') ?? host;
     this.themeObserver = new (host.ownerDocument.defaultView ?? window).MutationObserver(() => {
-      if (!this.disposed && host.ownerDocument.body.classList.contains('theme-light') !== this.grid.lightTheme) this.updatePalette();
+      if (!this.disposed) this.updatePalette();
     });
-    this.themeObserver.observe(host.ownerDocument.body, { attributes: true, attributeFilter: ['class'] });
+    this.themeObserver.observe(themeRoot, { attributes: true, attributeFilter: ['data-theme'] });
     const ownerWindow = host.ownerDocument.defaultView ?? window;
     this.observer = new ownerWindow.ResizeObserver(() => {
       if (this.disposed || this.resizeFrame !== null) return;

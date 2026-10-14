@@ -11,7 +11,8 @@ const evidence = `evidence/ui-v${version}`;
 const runId = String(Date.now()); const vault = resolve(`validation-vault/run-${runId}`), profile = resolve(`validation-vault/profile-${runId}`), appdata = join(profile, 'obsidian');
 await mkdir(join(vault, '.obsidian/plugins/lifeledger-next'), { recursive: true }); await mkdir(appdata, { recursive: true }); await mkdir(evidence, { recursive: true });
 for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(file, join(vault, '.obsidian/plugins/lifeledger-next', file));
-await writeFile(join(vault, '.obsidian/community-plugins.json'), '["lifeledger-next"]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false}');
+// Enable once through the API below, after layoutReady; avoid racing automatic startup.
+await writeFile(join(vault, '.obsidian/community-plugins.json'), '[]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false}');
 await writeFile(join(vault, '测试说明.md'), '# 隔离验证\n只含虚拟数据；本机模拟 API，不使用真实密钥。\n');
 await writeFile(join(appdata, 'obsidian.json'), JSON.stringify({ vaults: { 'lifeledger-isolated': { path: vault, open: true, ts: Date.now() } } }));
 await copyFile(runtime.asar, join(appdata, runtime.asarName));
@@ -49,17 +50,31 @@ try {
   await page.waitForFunction(() => globalThis.app?.plugins?.plugins?.['lifeledger-next']?.repo, undefined, { timeout: 15000 });
   await page.evaluate(async () => { await globalThis.app.plugins.plugins['lifeledger-next'].open(); });
   const size = await context.newCDPSession(page); await size.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.evaluate(() => { document.body.classList.remove('theme-light'); document.body.classList.add('theme-dark'); });
-  await page.locator('.lifeledger h1').waitFor(); assert.equal(await page.locator('.lifeledger h1').textContent(), '赚钱已成定局，余生好好体验');
+  await page.locator('.lifeledger h1').waitFor(); assert.equal(await page.locator('.lifeledger h1').textContent(), '把账记清楚，把日子过明白');
   assert.equal(await page.locator('.ll-stage-heading h2').textContent(), '财富自由指南灯');
   assert.equal(await page.locator('.ll-freedom-number').textContent(), '—天');
   await page.locator('.lifeledger').screenshot({ path: `${evidence}/home-empty.png` });
   assert.equal(await page.locator('.ll-account-strip button').count(), 0); record('空账本与标题', '正式插件没有预置虚拟余额');
+  stage = '空账本首次保存外观';
+  await page.evaluate(() => app.plugins.plugins['lifeledger-next'].openSettings()); let initialSettingsPage;
+  for (let attempt = 0; attempt < 40; attempt++) { for (const p of context.pages()) if (!p.isClosed() && await p.getByLabel('首页标语', { exact: true }).isVisible().catch(() => false)) initialSettingsPage = p; if (initialSettingsPage) break; await new Promise(r => setTimeout(r, 100)); }
+  assert.ok(initialSettingsPage);
+  await initialSettingsPage.getByLabel('首页标语', { exact: true }).fill('从今天开始'); await initialSettingsPage.getByRole('button', { name: '保存首页与外观', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.lifeledger h1').textContent === '从今天开始');
+  await initialSettingsPage.waitForFunction(() => document.querySelector('.lifeledger-settings')?.getAttribute('aria-busy') !== 'true');
+  await initialSettingsPage.getByLabel('首页标语', { exact: true }).fill(''); await initialSettingsPage.getByRole('button', { name: '保存首页与外观', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.lifeledger h1').textContent === '把账记清楚，把日子过明白');
+  await initialSettingsPage.waitForFunction(() => document.querySelector('.lifeledger-settings')?.getAttribute('aria-busy') !== 'true');
+  assert.equal(await page.evaluate(() => app.plugins.plugins['lifeledger-next'].repo.state.transactions.size), 0);
+  await page.evaluate(() => app.setting.close()); await new Promise(r => setTimeout(r, 150)); record('空账本首次保存标语及恢复默认', '无需先创建账户或记账，保存外观不产生流水');
   stage = '账户初设';
   await page.getByRole('button', { name: '添加账户', exact: true }).click();
   await page.getByLabel('账户名称', { exact: true }).fill('活动钱包'); await page.getByLabel('期初余额（元）', { exact: true }).fill('3000'); await page.getByLabel('期初余额（元）', { exact: true }).press('Tab'); await page.getByLabel('设为默认收支账户（仅资产账户）').check(); await page.getByRole('button', { name: '保存账户', exact: true }).click(); await page.locator('dialog').waitFor({ state: 'detached' });
   await page.evaluate(async ({ modelUrl }) => {
-    const plugin = globalThis.app.plugins.plugins['lifeledger-next']; const c = plugin.repo.config, today = c.observationStart;
+    const plugin = globalThis.app.plugins.plugins['lifeledger-next']; await plugin.repo.settled(); await plugin.repo.load();
+    const c = structuredClone(plugin.repo.config), today = c.observationStart;
     c.accounts.push({ id: 'reserve', name: '备用钱包', kind: 'asset', openingCents: 500000, openingDate: today, freedomBps: 10000, aliases: [] }, { id: 'asset', name: '资产账户', kind: 'asset', openingCents: 2000000, openingDate: today, freedomBps: 10000, aliases: [] }); c.estimateDailyCents = 5000; c.animation = 'off';
     await plugin.repo.saveConfig(c); plugin.deviceSettings.api.baseUrl = modelUrl; plugin.deviceSettings.api.model = 'isolated-model'; plugin.app.secretStorage.setSecret(plugin.deviceSettings.api.secretId, 'synthetic-key-only'); await plugin.saveData(plugin.deviceSettings); await plugin.refresh();
   }, { modelUrl });
@@ -123,6 +138,7 @@ try {
   assert.equal(await page.locator('.ll-chart svg line').count(), 4); const chartPoint = page.locator('.ll-chart svg circle').first(); await chartPoint.focus(); assert.ok((await page.locator('.ll-chart-result').textContent()).includes('收入')); await chartPoint.press('Enter'); assert.equal(await page.locator('.ll-nav .is-active').textContent(), '账本'); assert.ok((await page.locator('.ll-ledger-detail h2').textContent()).includes(today)); record('B版图表坐标、悬停与打开账目', '真实数据坐标轴，键盘聚焦显示中文金额，回车打开对应日期');
   stage = '浅色主题';
   const setTheme = async light => {
+    await page.emulateMedia({ colorScheme: light ? 'light' : 'dark' });
     await page.evaluate(light => { document.body.classList.toggle('theme-light', light); document.body.classList.toggle('theme-dark', !light); }, light);
     await page.waitForFunction(light => getComputedStyle(document.querySelector('.lifeledger')).colorScheme === (light ? 'light' : 'dark'), light);
   };
@@ -251,6 +267,65 @@ try {
   let settingsPage;
   for (let attempt = 0; attempt < 30; attempt++) { for (const candidate of context.pages()) if (await candidate.locator('.lifeledger-settings').count()) settingsPage = candidate; if (settingsPage) break; await new Promise(r => setTimeout(r, 100)); }
   assert.ok(settingsPage, '原生设置窗口未打开'); await settingsPage.locator('.lifeledger-settings').waitFor(); assert.equal(await settingsPage.locator('.lifeledger-settings input[type=password]').count(), 1); await settingsPage.screenshot({ path: `${evidence}/obsidian-settings.png` }); await page.evaluate(() => globalThis.app.setting.close()); record('Obsidian设置与密钥入口', 'Obsidian 1.14.4的独立设置窗口可打开；密码输入，使用合成密钥');
+  stage = '首页标语与外观设置';
+  const appearanceFinance = () => page.evaluate(() => {
+    const r = app.plugins.plugins['lifeledger-next'].repo, { homeSlogan, theme, ...config } = r.config;
+    return JSON.stringify({ config, transactions: [...r.state.transactions], costs: [...r.state.costs], batches: r.state.batches });
+  });
+  const financeBeforeAppearance = await appearanceFinance();
+  const openAppearance = async () => {
+    await page.evaluate(() => app.plugins.plugins['lifeledger-next'].openSettings());
+    for (let attempt = 0; attempt < 40; attempt++) {
+      for (const candidate of context.pages()) if (!candidate.isClosed() && await candidate.getByLabel('首页标语', { exact: true }).isVisible().catch(() => false)) return candidate;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error('首页与外观设置未打开');
+  };
+  const closeAppearance = async () => { await page.evaluate(() => app.setting.close()); await new Promise(r => setTimeout(r, 150)); };
+  const saveAppearance = async (slogan, theme) => {
+    const p = await openAppearance(); await p.getByLabel('首页标语', { exact: true }).fill(slogan);
+    await p.getByLabel('页面外观', { exact: true }).selectOption(theme); await p.getByRole('button', { name: '保存首页与外观', exact: true }).click();
+    await page.waitForFunction(({ slogan, theme }) => { const c = app.plugins.plugins['lifeledger-next'].repo.config; return c.theme === theme && c.homeSlogan === slogan; }, { slogan: slogan.trim() || '把账记清楚，把日子过明白', theme });
+    await p.waitForFunction(() => document.querySelector('.lifeledger-settings')?.getAttribute('aria-busy') !== 'true');
+    await closeAppearance();
+  };
+  const appearanceSettingsPage = await openAppearance();
+  await appearanceSettingsPage.getByLabel('首页标语', { exact: true }).fill('未保存的标语'); await appearanceSettingsPage.getByLabel('页面外观', { exact: true }).selectOption('light');
+  await closeAppearance(); assert.equal(await page.locator('.lifeledger h1').textContent(), '把账记清楚，把日子过明白'); assert.equal(await page.locator('.lifeledger').getAttribute('data-theme'), 'dark');
+  record('标语和外观关闭放弃未保存修改', '输入与选择不会提前改页面或账本');
+  const personalSlogan = '<em>每一笔，都为喜欢的生活</em>';
+  await saveAppearance(personalSlogan, 'dark'); assert.equal(await page.locator('.lifeledger h1').textContent(), personalSlogan); assert.equal(await page.locator('.lifeledger h1 em').count(), 0);
+  record('首页标语保存后按纯文字显示', '标语可自定义；HTML字符不执行');
+  await page.emulateMedia({ colorScheme: 'light' }); await page.evaluate(() => { document.body.classList.remove('theme-dark'); document.body.classList.add('theme-light'); });
+  assert.equal(await page.locator('.lifeledger').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(17, 18, 23)');
+  await page.waitForFunction(() => !app.workspace.getLeavesOfType('lifeledger-next-view')[0].view.ui.stage.grid.lightTheme);
+  record('固定深色独立于系统和Obsidian浅色', '页面与Canvas均保持深色');
+  await saveAppearance(personalSlogan, 'light'); await page.emulateMedia({ colorScheme: 'dark' });
+  await page.evaluate(() => { document.body.classList.remove('theme-light'); document.body.classList.add('theme-dark'); });
+  for (const name of ['首页', '账本', '分析', '账户', '每日成本']) {
+    await page.locator('.ll-nav').getByRole('button', { name, exact: true }).click();
+    assert.equal(await page.locator('.lifeledger').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(246, 247, 250)');
+  }
+  await page.getByRole('button', { name: '登记已有物品 / 订阅', exact: true }).click();
+  assert.equal(await page.locator('dialog').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(255, 255, 255)'); await page.locator('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  record('固定浅色独立于系统和Obsidian深色', '五页和登记弹窗沿用浅色变量');
+  await saveAppearance(personalSlogan, 'system'); await page.locator('.ll-nav').getByRole('button', { name: '首页', exact: true }).click();
+  await page.getByRole('button', { name: '口播 / 手动记账', exact: true }).click(); await page.getByLabel('原文', { exact: true }).fill('主题切换时保留输入');
+  await page.emulateMedia({ colorScheme: 'light' }); await page.waitForFunction(() => document.querySelector('.lifeledger').dataset.theme === 'light');
+  assert.equal(await page.getByLabel('原文', { exact: true }).inputValue(), '主题切换时保留输入'); assert.equal(await page.locator('dialog').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(255, 255, 255)');
+  await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForFunction(() => document.querySelector('.lifeledger').dataset.theme === 'dark');
+  assert.equal(await page.getByLabel('原文', { exact: true }).inputValue(), '主题切换时保留输入'); await page.getByRole('button', { name: '保存草稿并关闭', exact: true }).click(); await page.locator('dialog').waitFor({ state: 'detached' });
+  await page.evaluate(async () => { const r = app.plugins.plugins['lifeledger-next'].repo; await r.discardDraft(r.drafts.find(d => d.text === '主题切换时保留输入')); });
+  await page.waitForFunction(() => !app.workspace.getLeavesOfType('lifeledger-next-view')[0].view.ui.stage.grid.lightTheme);
+  record('跟随系统即时切换并保留弹窗输入', '实际matchMedia事件更新页面、弹窗与Canvas，无需重开');
+  await saveAppearance('好'.repeat(120), 'dark'); await size.send('Emulation.setDeviceMetricsOverride', { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await page.locator('.lifeledger').evaluate(n => n.scrollWidth > n.clientWidth + 1), false);
+  await size.send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await page.evaluate(async () => { await app.plugins.disablePlugin('lifeledger-next'); await app.plugins.enablePlugin('lifeledger-next'); await app.plugins.plugins['lifeledger-next'].open(); });
+  await page.locator('.lifeledger h1').waitFor(); assert.equal(await page.locator('.lifeledger h1').textContent(), '好'.repeat(120)); assert.equal(await page.locator('.lifeledger').getAttribute('data-theme'), 'dark');
+  record('最长标语窄窗口换行及重启保留', '120字不横向溢出；标语和固定深色重启保留');
+  await saveAppearance('   ', 'system'); assert.equal(await page.locator('.lifeledger h1').textContent(), '把账记清楚，把日子过明白');
+  assert.equal(await appearanceFinance(), financeBeforeAppearance); record('空白标语回到默认且外观不改财务数据', '账户、金额、交易、成本和批次均不变');
   stage = '设置窗口刷新后主题回调';
   for (let iteration = 0; iteration < 8; iteration++) {
     await page.evaluate(() => app.plugins.plugins['lifeledger-next'].openSettings()); let popup;

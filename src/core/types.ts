@@ -14,6 +14,7 @@ export interface Config {
   observationStart: DateISO; estimateDailyCents: number | null; reservedCents: number;
   birthDate: DateISO | null; displayEnd: DateISO; showPast: boolean;
   sound: boolean; animation: 'full' | 'short' | 'off';
+  homeSlogan?: string; theme?: 'system' | 'light' | 'dark';
   exchangeRates?: ExchangeRates;
 }
 export interface Transaction {

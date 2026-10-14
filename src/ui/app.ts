@@ -1,11 +1,12 @@
 import { affects, baseline, costOn, dayStatus, filterTransactions, freedom, series, totals } from '../core/calculations';
-import { addDays, cents, daysBetween, decimal, id, localDate, money, sha256, validDate } from '../core/primitives';
+import { addDays, cents, daysBetween, decimal, DEFAULT_SLOGAN, id, localDate, money, sha256, validDate } from '../core/primitives';
 import { applyEvents, requireThat } from '../core/ledger';
 import { newDraft } from '../core/drafts';
 import type { Account, Config, Cost, Currency, Draft, ExchangeRates, LedgerEvent, Transaction } from '../core/types';
 import { DraftEditor, KIND_NAMES, type EditorHost } from './editor';
 import { button, check, dialog, download, el, input, select } from './dom';
 import { Stage } from './stage';
+import { ViewTheme } from './theme';
 import { accountCurrency, baseAmount, convertMoney, CURRENCIES, formatCurrency, parseRate, RATE_SCALE, rateFor, rateText, transactionCurrency, valuationFor } from '../core/currency';
 
 export interface AppHost extends EditorHost { openSettings: () => void; openFile: (path: string) => void; refreshRates: () => Promise<ExchangeRates>; ratesError: () => string }
@@ -19,8 +20,10 @@ export class LedgerUI {
   private homeDraft?: Draft; private captureTimer?: ReturnType<typeof setTimeout>;
   private captureWriting: Promise<void> = Promise.resolve(); private captureStatus = '';
   private openingDraft = false;
+  private theme: ViewTheme;
   constructor(private root: HTMLElement, readonly host: AppHost) {
     root.classList.add('lifeledger'); this.shell = el('div', 'll-shell', '', root); this.overlays = el('div', 'll-overlays', '', root);
+    this.theme = new ViewTheme(root);
     const capture = host.repo.drafts.find(d => d.origin === 'home' && d.status === 'editing' && !d.rows.length && d.text.trim());
     if (capture) { this.homeDraft = structuredClone(capture); this.homeText = capture.text; this.captureStatus = '已恢复上次未整理的原文'; }
     const latest = host.repo.state.batches.at(-1);
@@ -79,10 +82,11 @@ export class LedgerUI {
     }); await this.captureWriting;
   }
   render() {
+    this.theme.set(this.config().theme);
     this.renderedSignature = this.signature();
     this.stage?.destroy(); this.stage = undefined; this.shell.replaceChildren();
     const header = el('header', 'll-header', '', this.shell); const brand = el('div', '', '', header);
-    el('div', 'll-eyebrow', 'LifeLedger / My life, my ledger', brand); el('h1', '', '赚钱已成定局，余生好好体验', brand);
+    el('div', 'll-eyebrow', 'LifeLedger / My life, my ledger', brand); el('h1', '', this.config().homeSlogan?.trim() || DEFAULT_SLOGAN, brand);
     el('span', 'll-tag', localDate().replaceAll('-', '.'), header);
     const nav = el('nav', 'll-nav', '', this.shell); nav.setAttribute('aria-label', 'LifeLedger 页面');
     for (const page of ['首页', '账本', '分析', '账户', '每日成本'] as Page[]) button(nav, page, () => { this.page = page; this.render(); }, this.page === page ? 'is-active' : '');
@@ -604,5 +608,5 @@ export class LedgerUI {
   }
   private signature() { return JSON.stringify({ config: this.config(), batches: this.state().batches.map(b => b.checksum), issues: this.state().issues }); }
   async reload(onlyIfChanged = false) { await this.host.repo.load(); if (!onlyIfChanged || this.signature() !== this.renderedSignature) this.render(); else this.renderPending(); }
-  async destroy() { this.stage?.destroy(); this.root.replaceChildren(); await this.flushPending(); await this.editor?.destroy(); }
+  async destroy() { this.theme.destroy(); this.stage?.destroy(); this.root.replaceChildren(); await this.flushPending(); await this.editor?.destroy(); }
 }

@@ -22,9 +22,12 @@ npm run verify:adversarial
 npm run verify:currency
 npm run verify:screenshots
 npm run open:review
+npm run capture:demo
 ```
 
 脚本在 `validation-vault/` 创建独立 Vault 和应用配置，只使用虚拟金额和本机模拟 API，不打开或改写日常 Vault。证据在 `evidence/`；两目录都被 Git 排除。`open:review` 保留已存在试验库中的操作；第一次运行需要先通过 `verify:ui` 生成样例。
+
+`capture:demo` 单独创建仅含虚拟账户与交易的演示 Vault，不配置 API 或密钥，拍摄浅色、深色首页及“首页与外观”设置。输出在 `evidence/demo-v<版本>/`，人工查看后才复制到 `docs/images/`；README 图源为真实插件界面截图。
 
 当前实机脚本在 Windows 上验证，使用本地 Obsidian 1.14.4。Windows 默认从 `LOCALAPPDATA` 和 `APPDATA` 发现程序及应用包，没有作者电脑的固定路径。自定义安装位置可以设置：
 
@@ -37,6 +40,8 @@ npm run verify:ui
 需要已安装并启动过 Obsidian，拥有可读的 `.asar` 应用包。隔离 UI 启停脚本当前按 Windows 实现；macOS／Linux 的 UI 自动化未验收。不要把测试路径改成日常 Vault。CI 在 Linux 运行核心、构建与打包，不运行桌面实机脚本。
 
 `verify:ui` 在 0.1.7 新增账户排序检查，包含取消、置顶／上下移动、键盘操作、两页同步、旧窗口冲突、改名保留位置、新账户追加、明暗窄窗口及插件重启。核心测试核对排序后的资金、笔记、交易及备份恢复，沿用既有账户数组顺序，无需数据迁移。
+
+0.1.8 在同一脚本新增首页标语和三种外观检查：未保存关闭、纯文字显示、固定主题独立于系统与 Obsidian、系统变化保留弹窗输入、最长标语窄窗格、重启和空白恢复默认。外观测试通过 `emulateMedia` 模拟操作系统深浅偏好，插件使用所属窗口的 `matchMedia`，色板仅作用于插件视图；Canvas 监听视图的实际主题，销毁时释放监听。配置中的 `homeSlogan` 和 `theme` 是可选字段，缺字段的旧账本及备份继续可读，保存和恢复沿用原配置校验及冲突检查。
 
 ## 源码与安装包
 

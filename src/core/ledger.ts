@@ -10,6 +10,8 @@ export function validateConfig(c: Config): void {
   requireThat(c && c.version === 1 && Array.isArray(c.accounts) && Array.isArray(c.categories), '配置格式或版本错误');
   const ids = new Set<string>(); const names = new Set<string>();
   requireThat(c.exchangeRates === undefined || validateRates(c.exchangeRates), '汇率缓存格式、日期或数值错误');
+  requireThat(c.homeSlogan === undefined || (typeof c.homeSlogan === 'string' && c.homeSlogan.length <= 120 && !/[\u0000-\u001f\u007f]/.test(c.homeSlogan)), '首页标语最多 120 字，且不能包含换行或控制字符');
+  requireThat(c.theme === undefined || ['system', 'light', 'dark'].includes(c.theme), '页面外观须为跟随系统、浅色或深色');
   for (const a of c.accounts) {
     requireThat(a && typeof a.id === 'string' && a.id.length > 0 && !ids.has(a.id), '账户 ID 重复或缺失'); ids.add(a.id);
     requireThat(typeof a.name === 'string' && a.name.trim() && ['asset', 'liability'].includes(a.kind), '账户名称或类型错误');

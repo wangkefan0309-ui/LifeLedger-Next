@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Config, DraftRow } from './types';
+export const DEFAULT_SLOGAN = '把账记清楚，把日子过明白';
 export const id = (): string => randomUUID();
 export const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 export function localDate(now = new Date()): string {
@@ -47,7 +48,7 @@ export function defaultConfig(today = localDate()): Config {
       { id: 'interest', name: '利息分红', kind: 'income', living: false }
     ], defaultAccountId: null, observationStart: today, estimateDailyCents: null,
     reservedCents: 0, birthDate: null, displayEnd: `${Number(today.slice(0, 4)) + 50}${today.slice(4)}`,
-    showPast: false, sound: false, animation: 'full'
+    showPast: false, sound: false, animation: 'full', homeSlogan: DEFAULT_SLOGAN, theme: 'system'
   };
 }
 export function blankRow(today = localDate()): DraftRow {

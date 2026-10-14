@@ -10,7 +10,7 @@ const runtime = await obsidianRuntime(), version = JSON.parse(await readFile('ma
 const run = Date.now(), vault = resolve(`validation-vault/currency-${run}`), profile = resolve(`validation-vault/currency-profile-${run}`), appdata = join(profile, 'obsidian'), evidence = `evidence/currency-v${version}`;
 await mkdir(join(vault, '.obsidian/plugins/lifeledger-next'), { recursive: true }); await mkdir(appdata, { recursive: true }); await mkdir(evidence, { recursive: true });
 for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(file, join(vault, '.obsidian/plugins/lifeledger-next', file));
-await writeFile(join(vault, '.obsidian/community-plugins.json'), '["lifeledger-next"]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false,"trashOption":"local"}');
+await writeFile(join(vault, '.obsidian/community-plugins.json'), '[]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false,"trashOption":"local"}');
 await writeFile(join(vault, '测试说明.md'), '# 多币种隔离验证\n全部余额、账户和口播为虚拟样本。\n');
 await writeFile(join(appdata, 'obsidian.json'), JSON.stringify({ vaults: { 'lifeledger-currency': { path: vault, open: true, ts: run } } })); await copyFile(runtime.asar, join(appdata, runtime.asarName));
 let mode = 'meal', requests = 0;
@@ -63,7 +63,7 @@ try {
   stage = '折算显示'; const batches = await page.evaluate(() => app.plugins.plugins['lifeledger-next'].repo.state.batches.length);
   await page.getByRole('button', { name: '切换众安银行折算币种', exact: true }).click(); await page.waitForFunction(id => document.querySelector(`.ll-asset-account[data-account-id="${id}"]`).textContent.includes('约 US$1,000.00'), ids['众安银行']); assert.ok((await bank.innerText()).includes('HK$10,000.00'));
   assert.equal(await page.evaluate(() => app.plugins.plugins['lifeledger-next'].repo.state.batches.length), batches); record('账户小按钮切换美元显示但不改余额或批次', '港币主金额不变，人民币/美元折算独立显示');
-  for (const light of [false, true]) { await page.evaluate(light => { document.body.classList.toggle('theme-light', light); document.body.classList.toggle('theme-dark', !light); }, light); await page.locator('.lifeledger').screenshot({ path: `${evidence}/accounts-${light ? 'light' : 'dark'}.png` }); }
+  for (const light of [false, true]) { await page.emulateMedia({ colorScheme: light ? 'light' : 'dark' }); await page.waitForFunction(light => document.querySelector('.lifeledger').dataset.theme === (light ? 'light' : 'dark'), light); await page.locator('.lifeledger').screenshot({ path: `${evidence}/accounts-${light ? 'light' : 'dark'}.png` }); }
   stage = '纯换算'; await page.getByRole('button', { name: '⇄ 换汇', exact: true }).click(); await page.getByLabel('换算金额', { exact: true }).fill('1000'); assert.ok((await page.locator('.ll-fx-preview').textContent()).includes('¥800.00')); assert.equal(await page.evaluate(() => app.plugins.plugins['lifeledger-next'].repo.state.transactions.size), 0); record('三币种换算立即展示，未勾选记账不写流水', '1000港币参考为800人民币');
   await page.getByLabel('折算币种', { exact: true }).selectOption('USD'); assert.ok((await page.locator('.ll-fx-preview').textContent()).includes('US$100.00'));
   await dialog().screenshot({ path: `${evidence}/converter-light.png` });

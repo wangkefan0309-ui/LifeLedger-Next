@@ -1,6 +1,6 @@
 import { ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl, normalizePath } from 'obsidian';
 import { Extractor, apiUrl, type ApiSettings } from './api/extractor';
-import { cents, decimal, localDate, sha256 } from './core/primitives';
+import { cents, decimal, DEFAULT_SLOGAN, localDate, sha256 } from './core/primitives';
 import { requireThat } from './core/ledger';
 import type { Config, ExchangeRates } from './core/types';
 import { parseReferenceRates, RATES_URL } from './api/exchange-rates';
@@ -148,6 +148,23 @@ class LedgerSettings extends PluginSettingTab {
   }
   display() {
     const { containerEl } = this; containerEl.empty(); containerEl.addClass('lifeledger-settings');
+    new Setting(containerEl).setName('首页与外观').setHeading();
+    const appearanceConfig = structuredClone(this.plugin.repo.config);
+    const appearanceFingerprint = this.plugin.repo.configRevision;
+    let homeSlogan = appearanceConfig.homeSlogan ?? DEFAULT_SLOGAN;
+    let theme: NonNullable<Config['theme']> = appearanceConfig.theme ?? 'system';
+    new Setting(containerEl).setName('首页标语').setDesc('写一句喜欢的标语或格言，最多 120 字；留空使用默认标语。保存后生效。').addText(t => {
+      t.inputEl.maxLength = 120; t.inputEl.setAttribute('aria-label', '首页标语');
+      t.setValue(homeSlogan).setPlaceholder(DEFAULT_SLOGAN).onChange(v => { homeSlogan = v; });
+    });
+    new Setting(containerEl).setName('页面外观').setDesc('只影响 LifeLedger 页面及记账弹窗；跟随系统会随电脑的深浅模式自动切换。').addDropdown(d => {
+      d.selectEl.setAttribute('aria-label', '页面外观');
+      d.addOptions({ system: '跟随系统', light: '浅色', dark: '深色' }).setValue(theme).onChange(v => { theme = v as NonNullable<Config['theme']>; });
+    });
+    new Setting(containerEl).setName('保存首页与外观').addButton(b => b.setButtonText('保存首页与外观').setCta().onClick(() => { void this.run(async () => {
+      await this.plugin.repo.saveConfig({ ...appearanceConfig, homeSlogan: homeSlogan.trim() || DEFAULT_SLOGAN, theme }, appearanceFingerprint);
+      await this.plugin.refresh(); this.display(); new Notice('首页与外观已保存');
+    }); }));
     new Setting(containerEl).setName('文件存储').setHeading();
     new Setting(containerEl).setName('账本目录').setDesc('Vault 内的普通文件夹。输入不会建目录；点击后才切换，第一次保存时才创建。原账本保留，不自动搬迁。').addText(t => t.setValue(this.plugin.deviceSettings.root).onChange(v => { root = v; })).addButton(b => b.setButtonText('打开此目录').onClick(() => { void this.run(async () => { await this.plugin.changeRoot(root); this.display(); new Notice(`当前账本目录：${this.plugin.repo.root}。原目录文件保留。`); }); }));
     let root = this.plugin.deviceSettings.root;
@@ -164,7 +181,7 @@ class LedgerSettings extends PluginSettingTab {
     new Setting(containerEl).setName('API 连接').setDesc('修改后点击保存才生效；检查连接只请求模型列表，不证明图片识别能力。整理发送本次原文及必要账户分类；点击识别截图会临时发送所选图片。').addButton(b => b.setButtonText('保存连接配置').onClick(() => { void this.run(async () => { await saveApi(); new Notice('配置已保存'); }); })).addButton(b => b.setButtonText('检查连接').onClick(() => { void this.run(async () => { new Notice(await this.plugin.extractor.checkConnection(api, this.plugin.getKey())); }); }));
     new Setting(containerEl).setName('成本与人生亮格').setHeading();
     const c: Config = structuredClone(this.plugin.repo.config);
-    const configFingerprint = sha256(JSON.stringify(c));
+    const configFingerprint = this.plugin.repo.configRevision;
     new Setting(containerEl).setName('成本观察起点').setDesc('从这里到最近连续记完日作为完整基线，原账目保留。').addText(t => { t.inputEl.type = 'date'; t.setValue(c.observationStart).onChange(v => { c.observationStart = v; }); });
     new Setting(containerEl).setName('暂估日均生活成本（元）').setDesc('仅在尚无完整观察区间时使用；可留空。').addText(t => t.setValue(c.estimateDailyCents === null ? '' : decimal(c.estimateDailyCents)).onChange(v => { try { c.estimateDailyCents = v.trim() ? cents(v) : null; } catch { c.estimateDailyCents = NaN; } }));
     new Setting(containerEl).setName('单独预留资金（元）').setDesc('仅填写尚未在余额或可用比例中排除的金额，统一扣一次。').addText(t => t.setValue(decimal(c.reservedCents)).onChange(v => { try { c.reservedCents = cents(v); } catch { c.reservedCents = NaN; } }));

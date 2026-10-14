@@ -1,4 +1,4 @@
-/* Shared B layout. Obsidian's theme class selects the scoped colour palette. */
+/* Shared B layout. The view's resolved theme selects its scoped colour palette. */
 .lifeledger {
   --ll-bg:#111217; --ll-panel:#1a1c23; --ll-border:#30323e; --ll-text:#efeee9;
   --ll-muted:#a4a5b3; --ll-gold:#f6cf7a; --ll-blue:#91b9f5; --ll-green:#92d6b4;
@@ -26,7 +26,7 @@
   font-family:var(--font-text,'Noto Serif SC',serif); font-size:15px;
   overflow:auto; padding:0 !important; container:lifeledger / inline-size;
 }
-.theme-light .lifeledger {
+.lifeledger[data-theme="light"] {
   --ll-bg:#f6f7fa; --ll-panel:#ffffff; --ll-border:#dce1e9; --ll-text:#292d35;
   --ll-muted:#657080; --ll-gold:#996311; --ll-blue:#346ca7; --ll-green:#2c7558;
   --ll-scheme:light; --ll-secondary:#eef1f6; --ll-button:#edf0f5;
@@ -48,7 +48,8 @@
 .lifeledger .ll-shell { max-width:1250px; margin:auto; padding:28px 32px 80px; }
 .lifeledger .ll-header { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:22px; }
 .lifeledger .ll-eyebrow { color:var(--ll-muted); font:11px Georgia,serif; letter-spacing:.12em; text-transform:uppercase; margin-bottom:5px; }
-.lifeledger h1 { color:var(--ll-text); margin:0; font-size:26px; line-height:1.5; font-weight:500; letter-spacing:0; }
+.lifeledger .ll-header > div { min-width:0; }
+.lifeledger h1 { color:var(--ll-text); margin:0; font-size:26px; line-height:1.5; font-weight:500; letter-spacing:0; overflow-wrap:anywhere; }
 .lifeledger h2 { color:var(--ll-text); font-size:18px; line-height:1.5; font-weight:500; margin:0 0 14px; }
 .lifeledger h3 { color:var(--ll-text); font-size:16px; line-height:1.5; font-weight:500; margin:0 0 12px; }
 .lifeledger p { line-height:1.8; margin:8px 0; overflow-wrap:anywhere; }

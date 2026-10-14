@@ -56,6 +56,7 @@ export function validateDraft(value: unknown): asserts value is Draft {
 export class Repository {
   config: Config = defaultConfig(); state: LedgerState = emptyState(); drafts: Draft[] = [];
   private configFingerprint = ''; private queue: Promise<unknown> = Promise.resolve();
+  get configRevision(): string { return this.configFingerprint; }
   readonly root: string;
   constructor(private io: FileIO, root: string, private today = () => localDate()) { this.root = validRoot(root); }
   async settled() { await this.queue; }

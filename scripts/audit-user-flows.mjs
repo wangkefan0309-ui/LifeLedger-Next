@@ -9,7 +9,7 @@ const runtime = await obsidianRuntime();
 const phase = process.env.AUDIT_PHASE || 'fixed'; const evidence = `evidence/adversarial-${phase}`; const runId = String(Date.now()); const vault = resolve(`validation-vault/adversarial-${runId}`), profile = resolve(`validation-vault/profile-${runId}`), appdata = join(profile, 'obsidian');
 await mkdir(join(vault, '.obsidian/plugins/lifeledger-next'), { recursive: true }); await mkdir(appdata, { recursive: true }); await mkdir(evidence, { recursive: true });
 for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(join(phase.startsWith('baseline') ? 'dist/lifeledger-next' : '.', file), join(vault, '.obsidian/plugins/lifeledger-next', file));
-await writeFile(join(vault, '.obsidian/community-plugins.json'), '["lifeledger-next"]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false,"trashOption":"local"}');
+await writeFile(join(vault, '.obsidian/community-plugins.json'), '[]'); await writeFile(join(vault, '.obsidian/app.json'), '{"safeMode":false,"trashOption":"local"}');
 await writeFile(join(vault, '测试说明.md'), '# 隔离验证\n只含虚拟数据；本机模拟 API，不使用真实密钥。\n');
 await writeFile(join(appdata, 'obsidian.json'), JSON.stringify({ vaults: { 'lifeledger-isolated': { path: vault, open: true, ts: Date.now() } } }));
 await copyFile(runtime.asar, join(appdata, runtime.asarName));
@@ -48,6 +48,7 @@ try {
   await page.evaluate(async () => { await globalThis.app.plugins.enablePlugin('lifeledger-next'); });
   await page.waitForFunction(() => globalThis.app?.plugins?.plugins?.['lifeledger-next']?.repo, undefined, { timeout: 15000 });
   await page.evaluate(async () => { await globalThis.app.plugins.plugins['lifeledger-next'].open(); });
+  assert.equal(await page.evaluate(() => app.workspace.getLeavesOfType('lifeledger-next-view')[0].view.plugin === app.plugins.plugins['lifeledger-next']), true, '页面须使用同一运行插件实例');
 
   const pause = ms => new Promise(r => setTimeout(r, ms));
   const snapshot = () => page.evaluate(() => ({ root: app.plugins.plugins['lifeledger-next'].repo.root, files: app.vault.getAllLoadedFiles().map(f => f.path).sort(), transactions: app.plugins.plugins['lifeledger-next'].repo.state.transactions.size }));
