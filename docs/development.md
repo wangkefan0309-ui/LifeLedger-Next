@@ -47,9 +47,13 @@ npm run verify:ui
 
 源码仓库包含 `src/`、`tests/`、`scripts/`、文档和虚拟截图。插件 ZIP 包含运行文件、使用文档、截图、许可证和来源说明，不包含开发依赖、源码测试环境、Vault、设备配置或密钥。直接下载源码 ZIP 后还需要构建；普通用户从 GitHub Releases 下载插件 ZIP。
 
-人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，使用预发布标记，保留未完成的真实链路验收说明。
+人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，保留未完成的真实链路验收说明。现有0.1.8为GitHub预发布，尚未进入官方社区目录。
 
 作者及维护者为 Silas。Release 标签应指向已提交、已通过检查的源码；上传附件后核对远端大小和 SHA-256。README 提供对应版本的 ZIP 下载链接，预发布不依赖 `/releases/latest` 跳转。旧 Obsidian-LifeLedger 已归档，迁移提示指向本仓库；未单独发布的本地版本在 CHANGELOG 明确标注。
+
+社区候选版的标签须与 `manifest.json` 的版本精确一致，例如版本及标签均为 `0.1.9`，既有 `v0.1.8` 等发布快照保留。候选版建议使用正式Release；预发布标记的处理以当前官方后台核查为准。提交从 [Obsidian Community](https://community.obsidian.md) 连接GitHub后进入 New plugin，详见[官方提交指南](https://docs.obsidian.md/plugins/releasing/submit-plugin)。
+
+社区准备流程已于2026-10-14确认：先官方代码规范检查与已知窗口异常，再双语界面和英文记账核对、双语文档、候选版验收及提交。当前尚未接入官方ESLint、修改卸载行为或完成双语，不由既有核心测试及CI推定通过社区扫描。社区发布不额外加入手机、其他汇总币种或预算模块。
 
 ## 移动或改名源码目录
 
