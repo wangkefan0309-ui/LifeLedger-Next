@@ -8,6 +8,8 @@ import { button, check, dialog, download, el, input, select } from './dom';
 import { Stage } from './stage';
 import { ViewTheme } from './theme';
 import { accountCurrency, baseAmount, convertMoney, CURRENCIES, formatCurrency, parseRate, RATE_SCALE, rateFor, rateText, transactionCurrency, valuationFor } from '../core/currency';
+import { ReconciliationDialog } from './reconciliation';
+import { checkpointValid } from '../core/reconciliation';
 
 export interface AppHost extends EditorHost { openSettings: () => void; openFile: (path: string) => void; refreshRates: () => Promise<ExchangeRates>; ratesError: () => string }
 type Page = '首页' | '账本' | '分析' | '账户' | '每日成本';
@@ -15,6 +17,7 @@ export class LedgerUI {
   page: Page = '首页'; month = localDate().slice(0, 7); selectedDay = ''; accountFilter = ''; categoryFilter = '';
   private shell: HTMLElement; private overlays: HTMLElement; private stage?: Stage;
   private editor?: DraftEditor; private lastBatch = ''; private lastChange?: { before: ReturnType<typeof freedom>; after: ReturnType<typeof freedom> };
+  private reconciliation?: ReconciliationDialog;
   private noticeArea?: HTMLElement; private busy = false;
   private renderedSignature = ''; private homeText = ''; private selectedAccount = '';
   private homeDraft?: Draft; private captureTimer?: ReturnType<typeof setTimeout>;
@@ -54,13 +57,13 @@ export class LedgerUI {
     if (this.openingDraft) return; this.openingDraft = true;
     const field = this.shell.querySelector<HTMLTextAreaElement>('.ll-home-input'); if (field) field.readOnly = true;
     try {
-    await this.flushPending(); await this.editor?.destroy();
+    await this.flushPending(); await this.reconciliation?.destroy(); await this.editor?.destroy();
     if ((!screenshots && !draftId && this.homeText.trim()) || (this.homeDraft && draftId === this.homeDraft.id)) {
       draftId = this.homeDraft?.id; initialText = this.homeText;
       this.homeText = ''; this.homeDraft = undefined; this.captureStatus = '';
       const text = this.shell.querySelector<HTMLTextAreaElement>('.ll-home-input'); if (text) text.value = '';
     }
-    this.editor = new DraftEditor(this.overlays, { ...this.host, changed: (before, batchId) => this.changed(before, batchId), draftChanged: () => this.renderPending() }, this.host.repo.drafts.find(d => d.id === draftId), initialText, screenshots);
+    this.editor = new DraftEditor(this.overlays, { ...this.host, changed: (before, batchId) => this.changed(before, batchId), draftChanged: () => this.renderPending() }, this.host.repo.drafts.find(d => d.id === draftId), initialText, screenshots, { date: this.page === '账本' && this.selectedDay && this.selectedDay <= localDate() ? this.selectedDay : localDate() });
     if (arrange) void this.editor.extract();
     } catch (e) { this.host.notice(`原文保留，请重试：${(e as Error).message}`); }
     finally { this.openingDraft = false; if (field) field.readOnly = false; }
@@ -337,6 +340,7 @@ export class LedgerUI {
     if (!displayed.length) el('p', 'll-empty', '此范围没有已记录账目', detail);
     for (const t of [...displayed].reverse()) this.transactionCard(detail, t);
     button(detail, '补记账目', () => this.openDraft());
+    button(detail, '按日查差额', () => this.openReconciliation(this.config().accounts.find(a => a.id === this.accountFilter && a.kind === 'asset')));
   }
   private transactionCard(parent: HTMLElement, t: Transaction) {
     const card = el('article', 'll-transaction', '', parent); card.dataset.transactionId = t.id;
@@ -456,9 +460,11 @@ export class LedgerUI {
       el('p', 'll-muted', `期初 ${account.openingDate} / ${formatCurrency(account.openingCents, accountCurrency(account))} · 自由计算纳入 ${account.freedomBps / 100}%${account.id === this.config().defaultAccountId ? ' · 默认收支账户' : ''}`, card);
       const adjustments = [...this.state().transactions.values()].filter(t => t.kind === 'adjustment' && t.accountId === account.id).sort((a, b) => b.date.localeCompare(a.date));
       if (adjustments.length) el('p', 'll-muted', `最近对账 ${adjustments[0].date}`, card);
+      const checkpoint = this.config().reconciliations?.filter(r => r.accountId === account.id).sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (checkpoint) el('p', 'll-muted', `${checkpoint.date} 日终${checkpoint.scope === 'statement' ? '明细及余额' : '余额'}已核对 · ${checkpointValid(checkpoint, this.state(), this.config()) ? '记录有效' : '流水已变化，请重新核对'}`, card);
       button(card, '看流水', () => { this.page = '账本'; this.accountFilter = account.id; this.categoryFilter = ''; this.selectedDay = ''; this.render(); });
       button(card, '修改账户', () => this.accountForm(account));
-      if (account.kind === 'asset') button(card, '对账校准', () => this.reconcile(account));
+      if (account.kind === 'asset') { button(card, '查差额', () => this.openReconciliation(account)); button(card, '对账校准', () => this.reconcile(account)); }
     }
     el('p', 'll-muted', '借入与归还本金选择对应负债账户；利息单独记为支出。借出本金可转到自己建立的应收款资产账户。', panel);
     const history = el('section', 'll-panel ll-account-history', '', parent); el('h2', '', selected ? `${selected.name} · 流水` : '全部账户流水', history);
@@ -541,6 +547,15 @@ export class LedgerUI {
       await this.host.repo.saveConfig(c); d.close(); this.render();
     }), 'll-primary');
   }
+  private openReconciliation(account?: Account) {
+    if (!account) {
+      const d = dialog(this.overlays, '选择对账账户'); let accountId = this.accountFilter || this.config().defaultAccountId || '';
+      select(d.node, '对账账户', accountId, [['', '请选择单独的资产账户'], ...this.config().accounts.filter(a => a.kind === 'asset').map(a => [a.id, a.name] as [string, string])], value => { accountId = value; });
+      button(d.node, '开始核对', () => { const selected = this.config().accounts.find(a => a.id === accountId && a.kind === 'asset'); if (!selected) { this.host.notice('请选择对账账户'); return; } d.close(); this.openReconciliation(selected); }, 'll-primary'); return;
+    }
+    void this.reconciliation?.destroy();
+    this.reconciliation = new ReconciliationDialog(this.overlays, this.host, account, this.selectedDay && this.selectedDay <= localDate() ? this.selectedDay : localDate(), { openDraft: draftId => this.openDraft(draftId), editTransaction: tx => this.transactionForm(tx), refreshed: () => this.render() });
+  }
   private reconcile(account: Account) {
     const d = dialog(this.overlays, `核对 ${account.name}`); const current = freedom(this.state(), this.config(), localDate()).balances.get(account.id) ?? 0;
     el('p', '', `账本余额 ${formatCurrency(current, accountCurrency(account))}。填入该账户本币实际余额，差额单列为对账调整。`, d.node);
@@ -608,5 +623,5 @@ export class LedgerUI {
   }
   private signature() { return JSON.stringify({ config: this.config(), batches: this.state().batches.map(b => b.checksum), issues: this.state().issues }); }
   async reload(onlyIfChanged = false) { await this.host.repo.load(); if (!onlyIfChanged || this.signature() !== this.renderedSignature) this.render(); else this.renderPending(); }
-  async destroy() { this.theme.destroy(); this.stage?.destroy(); this.root.replaceChildren(); await this.flushPending(); await this.editor?.destroy(); }
+  async destroy() { this.theme.destroy(); this.stage?.destroy(); await this.reconciliation?.destroy(); this.root.replaceChildren(); await this.flushPending(); await this.editor?.destroy(); }
 }

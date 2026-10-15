@@ -27,3 +27,16 @@ export function dialog(parent: HTMLElement, title: string, onClose?: () => void)
   button(header, '关闭', close); node.addEventListener('cancel', () => { onClose?.(); node.remove(); });
   node.showModal(); return { node, close };
 }
+const positionFrames = new WeakMap<HTMLElement, number>();
+/** Preserve native dialog and Obsidian ancestor scrollers across DOM replacement. */
+export function captureViewPosition(root: HTMLElement): () => void {
+  const nodes: HTMLElement[] = []; for (let node: HTMLElement | null = root; node; node = node.parentElement) nodes.push(node);
+  const scrolling = root.ownerDocument.scrollingElement as HTMLElement | null; if (scrolling && !nodes.includes(scrolling)) nodes.push(scrolling);
+  const positions = nodes.map(node => ({ node, top: node.scrollTop, left: node.scrollLeft }));
+  return () => {
+    const restore = () => { if (!root.isConnected) return; for (const p of positions) { p.node.scrollTop = p.top; p.node.scrollLeft = p.left; } };
+    restore(); const win = root.ownerDocument.defaultView; if (!win) return;
+    const previous = positionFrames.get(root); if (previous !== undefined) win.cancelAnimationFrame(previous);
+    positionFrames.set(root, win.requestAnimationFrame(() => { positionFrames.delete(root); restore(); }));
+  };
+}

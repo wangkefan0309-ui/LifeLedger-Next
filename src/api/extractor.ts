@@ -7,6 +7,7 @@ import { accountMentions, routeNamedAccount } from '../core/account-routing';
 import { imageQuotedCents, safeImageText } from '../core/image-evidence';
 import { validateScreenshots, type ScreenshotImage, type ScreenshotOptions } from './screenshot-input';
 import { SCREENSHOT_PROMPT, SCREENSHOT_PROMPT_VERSION } from './screenshot-prompt';
+import { hasDateExpression } from '../core/drafts';
 export interface ApiSettings { baseUrl: string; model: string; secretId: string }
 export interface Transport { (url: string, body: object | null, apiKey: string): Promise<{ status: number; json: unknown }> }
 function object(value: unknown): Record<string, unknown> { requireThat(value && typeof value === 'object' && !Array.isArray(value), 'API 回复中对象格式错误'); return value as Record<string, unknown>; }
@@ -14,6 +15,40 @@ function keys(o: Record<string, unknown>, required: string[]): void {
   requireThat(Object.keys(o).length === required.length && required.every(k => Object.hasOwn(o, k)), 'API 回复字段与冻结协议不符');
 }
 function nullableString(v: unknown): v is string | null { return v === null || typeof v === 'string'; }
+function deepseekStructuredModel(model: string): boolean {
+  return ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-v4-pro'].includes(model);
+}
+function completionOptions(settings: ApiSettings) {
+  // Keep the user's thinking mode and leave room for both reasoning and JSON.
+  return deepseekStructuredModel(settings.model)
+    ? { max_tokens: 65536, thinking: { type: 'enabled' } }
+    : { max_tokens: 8192 };
+}
+function completionUsage(response: Record<string, unknown>): string {
+  const usage = response.usage && typeof response.usage === 'object' ? response.usage as Record<string, unknown> : undefined;
+  const details = usage?.completion_tokens_details && typeof usage.completion_tokens_details === 'object' ? usage.completion_tokens_details as Record<string, unknown> : undefined;
+  const count = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
+  return `${count(usage?.completion_tokens) ? `，输出 ${usage.completion_tokens} tokens` : ''}${count(details?.reasoning_tokens) ? `，其中思考 ${details.reasoning_tokens} tokens` : ''}`;
+}
+function completedContent(response: Record<string, unknown>, screenshots: boolean): string {
+  const label = screenshots ? '图片识别' : 'API';
+  const recovery = screenshots ? '临时截图、补充说明及现有草稿保留' : '原文和修正草稿保留';
+  requireThat(Array.isArray(response.choices) && response.choices.length, `${label} 返回空回复；${recovery}`);
+  const choice = object(response.choices[0]);
+  const finish = typeof choice.finish_reason === 'string' && /^[a-z_]{1,48}$/i.test(choice.finish_reason) ? choice.finish_reason : '未提供或无法识别';
+  if (choice.finish_reason === 'length') {
+    throw new Error(`${label} 回复未完整结束：达到输出上限或上下文限制而被截断（length${completionUsage(response)}）；${recovery}。深度思考保持开启，请减少${screenshots ? '截图或分批识别' : '本次账目后重试'}`);
+  }
+  requireThat(choice.finish_reason !== 'content_filter', `${label} 回复被服务商内容规则拦截（content_filter）；${recovery}，请核对输入或联系服务商`);
+  requireThat(choice.finish_reason !== 'tool_calls' && choice.finish_reason !== 'function_call', `${label} 返回了工具调用，未返回账单 JSON；请使用支持 JSON 输出的模型。${recovery}`);
+  requireThat(choice.finish_reason !== 'insufficient_system_resource', `${label} 服务端资源不足，回复未完整结束（insufficient_system_resource）；${recovery}，请稍后重试`);
+  requireThat(choice.finish_reason !== 'aborted', `${label} 生成被服务端中断（aborted${completionUsage(response)}）；${recovery}，请稍后重试`);
+  requireThat(choice.finish_reason === 'stop', `${label} 回复未完整结束：接口结束标记缺失或不兼容（${finish}${completionUsage(response)}）；${recovery}，请核对兼容 Chat Completions 的接口`);
+  const message = object(choice.message), content = message.content;
+  requireThat(!((content === null || content === undefined || typeof content === 'string' && !content.trim()) && typeof message.reasoning_content === 'string' && message.reasoning_content.trim()), `${label} 只返回了思考内容，未返回账单 JSON（stop${completionUsage(response)}）；${recovery}，请重试`);
+  requireThat(typeof content === 'string' && content.trim() && content.length <= 500_000, `${label} 返回空或过长内容；${recovery}，请重试或减少本次账目`);
+  return content as string;
+}
 export function parseExtraction(value: unknown, draft: Draft, config: Config): Pick<Draft, 'rows' | 'excluded' | 'completeDates'> {
   const data = object(value); keys(data, ['version', 'entries', 'excluded', 'complete_dates']);
   requireThat((data.version === 2 || data.version === 3) && Array.isArray(data.entries) && data.entries.length <= 300 && Array.isArray(data.excluded) && Array.isArray(data.complete_dates), 'API 回复版本或列表格式错误');
@@ -26,8 +61,9 @@ export function parseExtraction(value: unknown, draft: Draft, config: Config): P
     requireThat(e.currency === null || isCurrency(e.currency), '币种仅支持人民币、美元和港币');
     if (data.version === 2) requireThat(e.currency === 'CNY' || e.currency === null, '旧协议只支持人民币，请使用新版多币种协议');
     requireThat(typeof e.note === 'string' && typeof e.source_quote === 'string' && Array.isArray(e.issues) && e.issues.every(x => typeof x === 'string') && ['active', 'passive', 'other'].includes(String(e.income_source)), 'API 原文或疑问格式错误');
-    const row = blankRow(draft.submittedDate);
+    const defaultDate = draft.recordingDate ?? draft.submittedDate, row = blankRow(defaultDate);
     Object.assign(row, { kind: e.kind, date: e.date ?? '', amount: e.amount ?? '', accountId: e.account_id ?? '', fromAccountId: e.from_account_id ?? '', toAccountId: e.to_account_id ?? '', debtAccountId: e.debt_account_id ?? '', categoryId: e.category_id ?? '', relatedId: e.related_id ?? '', incomeSource: e.income_source, note: e.note, sourceQuote: e.source_quote, amountQuote: e.amount_quote ?? '', issues: [...e.issues] });
+    if (e.date === null || (draft.recordingDate && draft.recordingDate !== draft.submittedDate && !hasDateExpression(draft.text) && e.date_range === null)) row.date = defaultDate;
     if (data.version === 3) { requireThat(nullableString(e.received_amount) && nullableString(e.received_amount_quote), '换汇到账金额须为字符串或 null'); row.receivedAmount = e.received_amount ?? ''; row.receivedAmountQuote = e.received_amount_quote ?? ''; }
     if (e.date_range !== null) {
       const r = object(e.date_range); keys(r, ['start', 'end']); requireThat(validDate(r.start) && validDate(r.end) && r.start <= r.end, 'API 日期区间错误');
@@ -98,7 +134,7 @@ export function parseScreenshots(value: unknown, draft: Draft, config: Config, i
       const entry = object(rawEntry); requireThat(entry.cost === null && entry.date_range === null, '截图不能自动建立成本或用汇总代替逐笔');
       return { ...entry, date: entry.date === null ? options.date : entry.date };
     });
-    const evidenceDraft = { ...draft, text: image.text, imageEvidence: undefined };
+    const evidenceDraft = { ...draft, text: image.text, recordingDate: undefined, imageEvidence: undefined };
     const parsed = parseExtraction({ version: 3, entries, excluded: image.excluded, complete_dates: [] }, evidenceDraft, { ...config, defaultAccountId: null });
     imageEvidence.push({ id: selected.id, text: image.text });
     excluded.push(...parsed.excluded);
@@ -135,11 +171,12 @@ export class Extractor {
   constructor(private transport: Transport) {}
   private async request(settings: ApiSettings, key: string, route: string, body: object | null) {
     requireThat(key.trim(), '请先在插件设置中配置 API 密钥');
+    const seconds = body && deepseekStructuredModel(settings.model) ? 300 : 60;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([
         this.transport(apiUrl(settings.baseUrl, route), body, key),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('请求超过 60 秒；草稿保留，可重试')), 60000); })
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`请求超过 ${seconds} 秒仍未收到完整回复；原文和草稿保留，可减少本次账目后重试`)), seconds * 1000); })
       ]);
       requireThat(result.status >= 200 && result.status < 300, `API 返回 HTTP ${result.status}；请核对地址、密钥与额度`);
       return object(result.json);
@@ -152,11 +189,9 @@ export class Extractor {
     return found ? `连接正常，已找到 ${settings.model}` : `连接正常；模型列表未找到 ${settings.model}，请核对模型 ID`;
   }
   async extract(settings: ApiSettings, key: string, draft: Draft, c: Config, state: LedgerState) {
-    const context = { prompt_version: PROMPT_VERSION, today: draft.submittedDate, timezone: draft.timezone, reporting_currency: 'CNY', accounts: c.accounts.map(a => ({ id: a.id, name: a.name, aliases: a.aliases, kind: a.kind, currency: accountCurrency(a) })), categories: c.categories, related_expenses: [...state.transactions.values()].filter(t => t.kind === 'expense' && draft.text.includes('退')).slice(-10).map(t => ({ id: t.id, date: t.date, amount: (t.amountCents / 100).toFixed(2), currency: t.valuation?.currency ?? 'CNY', note: t.note })) };
-    const response = await this.request(settings, key, 'chat/completions', { model: settings.model, response_format: { type: 'json_object' }, max_tokens: 8192, messages: [{ role: 'system', content: EXTRACTION_PROMPT }, { role: 'user', content: JSON.stringify({ context, original_text: draft.text }) }] });
-    requireThat(Array.isArray(response.choices) && response.choices.length, 'API 返回空回复；草稿保留');
-    const choice = object(response.choices[0]); requireThat(choice.finish_reason === 'stop', 'API 回复未完整结束；草稿保留');
-    const content = object(choice.message).content; requireThat(typeof content === 'string' && content.trim() && content.length <= 500000, 'API 返回空或过长内容；草稿保留');
+    const context = { prompt_version: PROMPT_VERSION, today: draft.submittedDate, recording_date: draft.recordingDate ?? draft.submittedDate, timezone: draft.timezone, reporting_currency: 'CNY', accounts: c.accounts.map(a => ({ id: a.id, name: a.name, aliases: a.aliases, kind: a.kind, currency: accountCurrency(a) })), categories: c.categories, related_expenses: [...state.transactions.values()].filter(t => t.kind === 'expense' && draft.text.includes('退')).slice(-10).map(t => ({ id: t.id, date: t.date, amount: (t.amountCents / 100).toFixed(2), currency: t.valuation?.currency ?? 'CNY', note: t.note })) };
+    const response = await this.request(settings, key, 'chat/completions', { model: settings.model, response_format: { type: 'json_object' }, ...completionOptions(settings), messages: [{ role: 'system', content: EXTRACTION_PROMPT }, { role: 'user', content: JSON.stringify({ context, original_text: draft.text }) }] });
+    const content = completedContent(response, false);
     let parsed: unknown; try { parsed = JSON.parse(content); } catch { throw new Error('API 返回的 JSON 无法解析；原文和修正保留'); }
     const output = parseExtraction(parsed, draft, c);
     const usage = response.usage ? object(response.usage) : undefined;
@@ -170,11 +205,9 @@ export class Extractor {
     const content: object[] = [{ type: 'text', text: JSON.stringify({ context, guidance: draft.text, date: options.date, only_selected_date: options.onlySelectedDate, only_expenses: options.onlyExpenses, screenshots: images.map((image, index) => ({ image_index: index + 1, assigned_account_id: image.accountId || null })) }) }];
     images.forEach((image, index) => content.push({ type: 'text', text: `截图 ${index + 1}` }, { type: 'image_url', image_url: { url: image.dataUrl, detail: 'high' } }));
     let response: Record<string, unknown>;
-    try { response = await this.request(settings, key, 'chat/completions', { model: settings.model, response_format: { type: 'json_object' }, max_tokens: 8192, messages: [{ role: 'system', content: SCREENSHOT_PROMPT }, { role: 'user', content }] }); }
+    try { response = await this.request(settings, key, 'chat/completions', { model: settings.model, response_format: { type: 'json_object' }, ...completionOptions(settings), messages: [{ role: 'system', content: SCREENSHOT_PROMPT }, { role: 'user', content }] }); }
     catch (error) { if (/HTTP (400|415|422)/.test((error as Error).message)) throw new Error('图片请求被接口拒绝，请确认当前模型支持图片输入和 JSON 输出。临时截图与补充说明保留，可以修改配置后重试'); throw error; }
-    requireThat(Array.isArray(response.choices) && response.choices.length, '图片识别返回空回复，请重试');
-    const choice = object(response.choices[0]); requireThat(choice.finish_reason === 'stop', '图片识别回复未完整结束，请减少截图后重试');
-    const resultText = object(choice.message).content; requireThat(typeof resultText === 'string' && resultText.trim() && resultText.length <= 500_000, '图片识别返回空或过长内容');
+    const resultText = completedContent(response, true);
     let parsed: unknown; try { parsed = JSON.parse(resultText); } catch { throw new Error('图片识别未返回有效 JSON，补充说明及现有草稿保留'); }
     const output = parseScreenshots(parsed, draft, c, images, options);
     const usage = response.usage ? object(response.usage) : undefined;

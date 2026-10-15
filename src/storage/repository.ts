@@ -1,5 +1,5 @@
 import { applyEvents, checkBatch, replay, requireThat, sealBatch, undoEvents, validateConfig, validateTransaction, validateCost } from '../core/ledger';
-import { defaultConfig, localDate, sha256 } from '../core/primitives';
+import { defaultConfig, localDate, sha256, validDate } from '../core/primitives';
 import { emptyState, type Batch, type Config, type Draft, type LedgerEvent, type LedgerState } from '../core/types';
 import { accountCurrency, isCurrency } from '../core/currency';
 import { safeImageText } from '../core/image-evidence';
@@ -38,6 +38,7 @@ export function validateDraft(value: unknown): asserts value is Draft {
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(s => typeof s === 'string');
   requireThat(d && typeof d === 'object' && d.version === 1 && typeof d.id === 'string' && /^[\w-]+$/.test(d.id) && Number.isInteger(d.revision) && d.revision >= 0 &&
     typeof d.text === 'string' && (d.textHistory === undefined || strings(d.textHistory)) && typeof d.submittedDate === 'string' && typeof d.timezone === 'string' &&
+    (d.recordingDate === undefined || validDate(d.recordingDate)) &&
     typeof d.error === 'string' && typeof d.requestId === 'string' && ['editing', 'requesting', 'failed', 'review', 'saved'].includes(d.status) &&
     (d.origin === undefined || ['home', 'editor'].includes(d.origin)) && strings(d.completeDates) && Array.isArray(d.excluded) &&
     (d.inputMode === undefined || ['text', 'screenshots'].includes(d.inputMode)) &&

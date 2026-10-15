@@ -9,6 +9,10 @@ export interface Account {
   currency?: Currency; displayCurrency?: Currency | null;
 }
 export interface Category { id: string; name: string; kind: 'income' | 'expense'; living: boolean }
+export interface ReconciliationCheckpoint {
+  accountId: string; date: DateISO; actualCents: number; fingerprint: string;
+  checkedAt: string; scope: 'balance' | 'statement'; start: DateISO;
+}
 export interface Config {
   version: 1; accounts: Account[]; categories: Category[]; defaultAccountId: string | null;
   observationStart: DateISO; estimateDailyCents: number | null; reservedCents: number;
@@ -16,6 +20,7 @@ export interface Config {
   sound: boolean; animation: 'full' | 'short' | 'off';
   homeSlogan?: string; theme?: 'system' | 'light' | 'dark';
   exchangeRates?: ExchangeRates;
+  reconciliations?: ReconciliationCheckpoint[];
 }
 export interface Transaction {
   id: string; version: number; batchId: string; draftId: string | null; rowId: string | null;
@@ -59,6 +64,7 @@ export interface DraftRow {
   imageId?: string;
 }
 export interface Draft {
+  recordingDate?: DateISO;
   origin?: 'home' | 'editor';
   inputMode?: 'text' | 'screenshots';
   imageEvidence?: { id: string; text: string }[];

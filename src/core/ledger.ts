@@ -24,6 +24,15 @@ export function validateConfig(c: Config): void {
     requireThat(Array.isArray(a.aliases) && a.aliases.every(x => typeof x === 'string' && x.trim()), '账户别名错误');
     for (const name of [a.name, ...a.aliases]) { requireThat(!names.has(name.trim()), `账户名称或别名重复：${name}`); names.add(name.trim()); }
   }
+  if (c.reconciliations !== undefined) {
+    requireThat(Array.isArray(c.reconciliations) && c.reconciliations.length <= 10000, '对账记录格式错误');
+    const receipts = new Set<string>();
+    for (const r of c.reconciliations) {
+      const account = c.accounts.find(a => a.id === r?.accountId && a.kind === 'asset'), key = `${r?.accountId}/${r?.date}`;
+      requireThat(r && account && !receipts.has(key) && validDate(r.start) && validDate(r.date) && r.start >= account.openingDate && r.start <= r.date && r.date <= localDate() && safeMoney(r.actualCents) && /^[a-f0-9]{64}$/.test(r.fingerprint) && ['balance', 'statement'].includes(r.scope) && typeof r.checkedAt === 'string' && Number.isFinite(Date.parse(r.checkedAt)), '对账记录账户、日期或校验值错误');
+      receipts.add(key);
+    }
+  }
   ids.clear();
   for (const c2 of c.categories) {
     requireThat(c2 && typeof c2.id === 'string' && c2.id && !ids.has(c2.id), '分类 ID 重复或缺失'); ids.add(c2.id);

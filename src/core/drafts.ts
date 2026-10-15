@@ -3,9 +3,10 @@ import { applyEvents, requireThat } from './ledger';
 import type { Config, Cost, Draft, DraftRow, LedgerEvent, LedgerState, Transaction } from './types';
 import { accountCurrency, baseAmount, isCurrency, parseRate, RATE_SCALE, rateFor, rateText, roundedRatio, valuationFor } from './currency';
 import { draftOriginalText, imageQuotedCents } from './image-evidence';
-export function newDraft(text = '', today = localDate()): Draft {
-  return { version: 1, id: id(), revision: 0, text, textHistory: [], submittedDate: today, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, rows: [], excluded: [], completeDates: [], status: 'editing', error: '', requestId: id(), usage: null };
+export function newDraft(text = '', today = localDate(), recordingDate = today): Draft {
+  return { version: 1, id: id(), revision: 0, text, textHistory: [], submittedDate: today, recordingDate, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, rows: [], excluded: [], completeDates: [], status: 'editing', error: '', requestId: id(), usage: null };
 }
+export function hasDateExpression(text: string): boolean { return /今天|昨天|前天|大前天|明天|后天|[上下本这]周|周[一二三四五六日天末]|星期|\d{4}[-/.年]\d|\d{1,2}[月/-]\d{1,2}|\d{1,2}[日号]|月初|月底|上个月|这个月/.test(text); }
 export function rowIssues(row: DraftRow, config: Config, state: LedgerState, draft: Draft, today = localDate()): string[] {
   const errors: string[] = [];
   if (row.kind === 'unknown') errors.push('请明确这笔钱的用途和类型');
@@ -16,7 +17,11 @@ export function rowIssues(row: DraftRow, config: Config, state: LedgerState, dra
   if (!row.edited && (evidence || row.imageId)) {
     if (!row.sourceQuote || !evidence.includes(row.sourceQuote)) errors.push('原文引用不一致，需手工核对并修改');
     if (!row.amountQuote || !row.sourceQuote.includes(row.amountQuote)) errors.push('缺少原文金额证据，需手工核对并修改');
-    else { try { const exact = row.imageId ? imageQuotedCents(row.amountQuote) : quotedCents(row.amountQuote); if (exact === null || exact !== cents(row.amount)) errors.push('金额与原文无法自动对应，请核对并修改'); } catch { /* invalid amount already reported */ } }
+    else {
+      const sign = row.amountQuote.trim().match(/^([+＋−－-])\s*(.+)$/), positive = sign?.[1] === '+' || sign?.[1] === '＋';
+      if (sign && ((!positive && ['income', 'refund'].includes(row.kind)) || (positive && row.kind === 'expense'))) errors.push('金额正负号与收支方向冲突，请核对类型');
+      try { const exact = row.imageId ? imageQuotedCents(row.amountQuote) : quotedCents(sign?.[2] ?? row.amountQuote); if (exact === null || exact !== cents(row.amount)) errors.push('金额与原文无法自动对应，请核对并修改'); } catch { /* invalid amount already reported */ }
+    }
     if (/明天|准备|计划|打算|将要/.test(row.sourceQuote)) errors.push('原文包含未来计划，请核对实际发生日期与用途');
   }
   const transfers = ['transfer', 'lend', 'collect'].includes(row.kind);

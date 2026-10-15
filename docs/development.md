@@ -21,6 +21,7 @@ npm run verify:ui
 npm run verify:adversarial
 npm run verify:currency
 npm run verify:screenshots
+npm run verify:reconciliation
 npm run open:review
 npm run capture:demo
 ```
@@ -43,11 +44,13 @@ npm run verify:ui
 
 0.1.8 在同一脚本新增首页标语和三种外观检查：未保存关闭、纯文字显示、固定主题独立于系统与 Obsidian、系统变化保留弹窗输入、最长标语窄窗格、重启和空白恢复默认。外观测试通过 `emulateMedia` 模拟操作系统深浅偏好，插件使用所属窗口的 `matchMedia`，色板仅作用于插件视图；Canvas 监听视图的实际主题，销毁时释放监听。配置中的 `homeSlogan` 和 `theme` 是可选字段，缺字段的旧账本及备份继续可读，保存和恢复沿用原配置校验及冲突检查。
 
+`verify:reconciliation` 使用独立端口9244和虚拟Vault，覆盖补账日期、批改未核对行、原生长表单滚动与键盘焦点、日终截止、服务费待保存、文字及截图对照、取消迟到回复、账户核对记录失效、窄窗格和备份恢复。模拟接口核对DeepSeek思考开启及65536额度，不发送付费请求。并行脚本使用不同端口，布局就绪后只启用插件一次，并核对视图引用属于同一实例。
+
 ## 源码与安装包
 
 源码仓库包含 `src/`、`tests/`、`scripts/`、文档和虚拟截图。插件 ZIP 包含运行文件、使用文档、截图、许可证和来源说明，不包含开发依赖、源码测试环境、Vault、设备配置或密钥。直接下载源码 ZIP 后还需要构建；普通用户从 GitHub Releases 下载插件 ZIP。
 
-人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，保留未完成的真实链路验收说明。现有0.1.8为GitHub预发布，尚未进入官方社区目录。
+人工发布前运行全部相应检查，确认 `dist/package-info.json` 的版本和回读结果。GitHub Release 上传 `main.js`、`manifest.json`、`styles.css`、插件 ZIP 与 `SHA256SUMS.txt`，保留未完成的真实链路验收说明。现有0.1.11为GitHub预发布，标签为 `0.1.11`，与插件版本一致；旧 `v0.1.8` 等标签保留。尚未进入官方社区目录。
 
 作者及维护者为 Silas。Release 标签应指向已提交、已通过检查的源码；上传附件后核对远端大小和 SHA-256。README 提供对应版本的 ZIP 下载链接，预发布不依赖 `/releases/latest` 跳转。旧 Obsidian-LifeLedger 已归档，迁移提示指向本仓库；未单独发布的本地版本在 CHANGELOG 明确标注。
 
@@ -72,3 +75,5 @@ npm run verify:ui
 多币种实机脚本默认使用模拟 AI 和模拟参考汇率。单独验证真实公共参考汇率可运行 `$env:LIVE_RATES = '1'; npm run verify:currency`；此查询只用于虚拟 Vault，不使用金融 API 密钥，不表示真实口播已验收。
 
 截图脚本使用 Canvas 生成虚拟账单，模拟视觉服务通过插件真实请求接口返回可核对文字。覆盖选图、粘贴及拖入事件、范围过滤、补充用途、临时图片清除、备份恢复、错误与迟到回复。结果不代表真实 OCR 准确率，也不证明操作系统剪贴板已经验收；请求体不写入证据文件。
+
+0.1.10的 `tests/api-completion.test.ts` 在真实Extractor边界检查深度思考始终开启、推理内容不进入账单、截断／只返回思考／服务端中断分类及输出、思考token诊断，使用虚拟时钟核对300秒超时。`verify:screenshots` 同时检查补昨天截图和首页文字截断后手动重试，模拟服务核对Flash模型、保持思考及65536输出额度；同一实例检查在布局就绪、启用及打开视图后执行。模型与参数断言只证明客户端行为，不能用“指定某参数则模拟成功”宣称真实根因已复现。0.1.9关闭思考方案已撤回；0.1.10尚未发布，不将构建或安装文件覆盖推定为用户已重新加载或真实API验收完成。

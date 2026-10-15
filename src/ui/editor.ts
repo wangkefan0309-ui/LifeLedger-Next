@@ -1,10 +1,10 @@
 import type { Repository } from '../storage/repository';
 import type { Config, Draft, DraftRow, Transaction } from '../core/types';
-import { blankRow, cents, decimal, id, localDate, money } from '../core/primitives';
+import { blankRow, cents, decimal, id, localDate, money, validDate } from '../core/primitives';
 import { draftEvents, newDraft, rowIssues } from '../core/drafts';
 import { freedom } from '../core/calculations';
 import type { ApiSettings, Extractor } from '../api/extractor';
-import { button, check, dialog, el, input, select } from './dom';
+import { button, captureViewPosition, check, dialog, el, input, select } from './dom';
 import { accountCurrency, CURRENCIES, formatCurrency, parseRate, RATE_SCALE, rateFor, rateText, roundedRatio, transactionCurrency } from '../core/currency';
 import { requireThat } from '../core/ledger';
 import { inlineScreenshot, validateScreenshots, MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES, type ScreenshotImage, type ScreenshotOptions } from '../api/screenshot-input';
@@ -15,6 +15,7 @@ export interface EditorHost {
   notice: (message: string) => void; changed: (before: ReturnType<typeof freedom>, batchId: string) => void;
   draftChanged?: () => void;
 }
+export interface EditorOptions { date?: string; accountId?: string; onStatement?: (draft: Draft) => void | Promise<void> }
 export class DraftEditor {
   private draft: Draft; private content: HTMLElement; private node: HTMLDialogElement;
   private timeout?: ReturnType<typeof setTimeout>; private writing: Promise<void> = Promise.resolve();
@@ -22,13 +23,15 @@ export class DraftEditor {
   private images: ScreenshotImage[] = []; private readingImages = false;
   private imageOptions: ScreenshotOptions = { date: localDate(), onlySelectedDate: true, onlyExpenses: true };
   private closeDialog: () => void;
-  constructor(parent: HTMLElement, private host: EditorHost, existing?: Draft, initialText = '', screenshots = false) {
-    this.draft = existing ? structuredClone(existing) : newDraft(initialText);
+  constructor(parent: HTMLElement, private host: EditorHost, existing?: Draft, initialText = '', screenshots = false, private options: EditorOptions = {}) {
+    this.draft = existing ? structuredClone(existing) : newDraft(initialText, localDate(), options.date ?? localDate());
+    this.imageOptions.date = this.draft.recordingDate ?? this.draft.submittedDate;
+    if (options.onStatement) { this.imageOptions.onlyExpenses = false; this.imageOptions.onlySelectedDate = false; }
     if (screenshots) this.draft.inputMode = 'screenshots';
     this.draft.origin = 'editor';
     this.draft.textHistory ??= [];
     if (this.draft.status === 'requesting') { this.draft.status = 'failed'; this.draft.error = '上次整理被中断，原文和草稿保留'; }
-    const d = dialog(parent, this.draft.inputMode === 'screenshots' ? '截图记账' : '记一段生活', () => { this.closed = true; this.clearImages(); if (this.timeout) clearTimeout(this.timeout); if (this.draft.status !== 'saved') void this.flush().catch(e => host.notice(`草稿保存失败：${(e as Error).message}`)); });
+    const d = dialog(parent, options.onStatement ? '整理对照账单（不直接入账）' : this.draft.inputMode === 'screenshots' ? '截图记账' : '记一段生活', () => { this.closed = true; this.clearImages(); if (this.timeout) clearTimeout(this.timeout); if (this.draft.status !== 'saved') void this.flush().catch(e => host.notice(`草稿保存失败：${(e as Error).message}`)); });
     this.node = d.node; this.closeDialog = d.close; this.content = el('div', 'll-editor', '', this.node); this.render();
     this.node.addEventListener('paste', event => {
       const files = Array.from(event.clipboardData?.items ?? []).filter(item => item.kind === 'file' && item.type.startsWith('image/')).map(item => item.getAsFile()).filter((file): file is File => !!file);
@@ -44,6 +47,7 @@ export class DraftEditor {
   }
   private flush(): Promise<void> {
     if (this.timeout) { clearTimeout(this.timeout); this.timeout = undefined; }
+    if (this.options.onStatement) return Promise.resolve();
     this.writing = this.writing.catch(() => undefined).then(async () => {
       if (!this.draft.revision && !this.draft.text.trim() && !this.draft.rows.length && !this.draft.completeDates.length) return;
       await this.host.repo.saveDraft(this.draft); this.host.draftChanged?.();
@@ -53,13 +57,13 @@ export class DraftEditor {
   private clearImages() { for (const image of this.images) image.dataUrl = ''; this.images = []; }
   private async addImages(files: File[]) {
     if (this.closed || this.extracting || this.readingImages) return;
-    this.readingImages = true; this.draft.error = ''; this.draft.inputMode = 'screenshots'; this.node.querySelector('h2')!.textContent = '截图记账'; this.render();
+    this.readingImages = true; this.draft.error = ''; this.draft.inputMode = 'screenshots'; this.node.querySelector('h2')!.textContent = this.options.onStatement ? '整理对照账单（不直接入账）' : '截图记账'; this.render();
     const candidates: ScreenshotImage[] = [];
     try {
       requireThat(this.images.length + files.length <= MAX_IMAGES, '一次最多选择 5 张截图');
       requireThat(this.images.reduce((total, image) => total + image.bytes, 0) + files.reduce((total, file) => total + file.size, 0) <= MAX_TOTAL_IMAGE_BYTES, '截图总大小请控制在 20 MB 以内');
       for (const file of files) {
-        const image = inlineScreenshot(id(), new Uint8Array(await file.arrayBuffer()));
+        const image = inlineScreenshot(id(), new Uint8Array(await file.arrayBuffer()), this.options.accountId ?? '');
         const probe = this.node.ownerDocument.createElement('img'); probe.src = image.dataUrl;
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -85,7 +89,8 @@ export class DraftEditor {
     const fields = el('div', 'll-form-grid', '', panel);
     const date = input(fields, '截图日期（缺日期时使用）', this.imageOptions.date, 'date', value => { this.imageOptions.date = value; }); date.disabled = this.extracting;
     const day = check(panel, '只识别指定日期', this.imageOptions.onlySelectedDate, value => { this.imageOptions.onlySelectedDate = value; }); day.disabled = this.extracting;
-    const scope = check(panel, '只识别支出', this.imageOptions.onlyExpenses, value => { this.imageOptions.onlyExpenses = value; }); scope.disabled = this.extracting;
+    const scope = check(panel, '只识别支出', this.imageOptions.onlyExpenses, value => { this.imageOptions.onlyExpenses = value; }); scope.disabled = this.extracting || !!this.options.onStatement;
+    if (this.options.onStatement) el('small', 'll-muted', '对照余额需要全部收支，已保留收入、退款和转账；具体核对范围由对账窗口筛选。', panel);
     this.images.forEach((image, index) => {
       const card = el('div', 'll-image-card', '', panel), preview = el('img', 'll-image-preview', '', card); preview.src = image.dataUrl; preview.alt = `临时截图 ${index + 1}`;
       const info = el('div', 'll-image-info', '', card); el('strong', '', `图片 ${index + 1}`, info);
@@ -96,10 +101,16 @@ export class DraftEditor {
     el('p', 'll-muted', `当前模型：${this.host.api.model}。需要支持图片输入及 JSON 输出；接口不支持时可改为手动录入。`, panel);
   }
   private render() {
-    const focused = this.content.contains(document.activeElement) ? document.activeElement as HTMLInputElement : null;
+    const restorePosition = captureViewPosition(this.node);
+    const focused = this.content.contains(this.content.ownerDocument.activeElement) ? this.content.ownerDocument.activeElement as HTMLInputElement : null;
     const focusLabel = focused?.getAttribute('aria-label'), focusRow = focused?.closest<HTMLElement>('.ll-draft-row')?.dataset.rowId;
     this.content.replaceChildren();
     const screenshots = this.draft.inputMode === 'screenshots';
+    const date = input(this.content, '本次记账日期', this.draft.recordingDate ?? this.draft.submittedDate, 'date', value => {
+      if (!validDate(value) || value > localDate()) { this.draft.error = '请选择已发生的有效日期'; this.render(); return; }
+      this.draft.recordingDate = value; this.imageOptions.date = value; this.draft.completeDates = []; this.draft.error = ''; this.autosave(); this.render();
+    }); date.max = localDate(); date.disabled = this.extracting;
+    el('small', 'll-muted', '新行和未注明日期的文字沿用本次日期；原文明说的日期保留。', this.content);
     el('p', 'll-muted', screenshots ? '先选择截图，可补充用途或限定范围。识别只生成草稿，修改并核对后再保存。' : '在这里用 Typeless 口播、打字或粘贴。整理后统一核对，再保存。', this.content);
     if (screenshots) this.renderImages(this.content);
     const text = el('textarea', 'll-text-input', '', this.content); text.placeholder = screenshots ? '可留空。例如：这笔20元是打车；只记录实际支付，忽略充值。用途也能在识别后逐笔补充。' : '今天早饭八块，午饭二十五，晚饭三十二，地铁六块，公众号到账三百。今天就这些。'; text.value = this.draft.text; text.setAttribute('aria-label', screenshots ? '截图补充说明（可选）' : '原文');
@@ -108,8 +119,9 @@ export class DraftEditor {
     text.addEventListener('input', () => { this.draft.text = text.value; this.draft.status = 'editing'; this.draft.rows.forEach(r => { r.reviewed = false; if (!r.issues.includes('原文有修改，请重新核对')) r.issues.push('原文有修改，请重新核对'); }); this.autosave(); });
     const tools = el('div', 'll-toolbar', '', this.content);
     const arrange = button(tools, this.extracting ? '正在整理…' : screenshots ? '识别截图' : this.draft.rows.some(r => r.edited) ? '保留手工修改，再整理' : '整理成账目', () => this.extract(), 'll-primary'); arrange.disabled = this.extracting || this.readingImages || screenshots && !this.images.length;
-    if (!screenshots) button(tools, '添加截图', () => { this.draft.inputMode = 'screenshots'; this.node.querySelector('h2')!.textContent = '截图记账'; this.render(); }, 'll-ghost');
-    button(tools, '手动加一笔', () => { const row = blankRow(); row.accountId = this.host.repo.config.defaultAccountId ?? ''; row.usedDefault = !!row.accountId; row.edited = true; this.draft.rows.push(row); this.autosave(); this.render(); });
+    if (!screenshots) button(tools, '添加截图', () => { this.draft.inputMode = 'screenshots'; this.node.querySelector('h2')!.textContent = this.options.onStatement ? '整理对照账单（不直接入账）' : '截图记账'; this.render(); }, 'll-ghost');
+    button(tools, '手动加一笔', () => { const row = blankRow(this.draft.recordingDate ?? this.draft.submittedDate); row.accountId = this.options.accountId ?? this.host.repo.config.defaultAccountId ?? ''; row.usedDefault = !!row.accountId; row.edited = true; this.draft.rows.push(row); this.autosave(); this.render(); });
+    if (this.draft.rows.length) button(tools, '未核对行统一为本次日期', () => { this.draft.completeDates = []; for (const row of this.draft.rows.filter(row => !row.reviewed)) { row.date = this.draft.recordingDate ?? this.draft.submittedDate; if (row.dateRange) row.dateRange.end = row.date; if (row.cost) row.cost.start = row.date; this.edited(row); } this.render(); }, 'll-ghost');
     if (this.draft.error) el('p', 'll-error', this.draft.error, this.content);
     if (this.draft.usage) el('p', 'll-muted', `本次请求用量：输入 ${this.draft.usage.input} / 输出 ${this.draft.usage.output} tokens`, this.content);
     const rows = el('div', 'll-draft-list', '', this.content);
@@ -120,19 +132,28 @@ export class DraftEditor {
       const scope = focusRow ? this.content.querySelector(`[data-row-id="${CSS.escape(focusRow)}"]`) : this.content;
       scope?.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focusLabel)}"]`)?.focus({ preventScroll: true });
     }
+    restorePosition();
   }
   private renderFooter() {
+    const restorePosition = captureViewPosition(this.node);
     this.content.querySelector('.ll-editor-footer')?.remove();
     const footer = el('div', 'll-editor-footer', '', this.content);
-    check(footer, '今天所有账户已记完', this.draft.completeDates.includes(localDate()), complete => { this.draft.completeDates = complete ? [...new Set([...this.draft.completeDates, localDate()])] : this.draft.completeDates.filter(d => d !== localDate()); this.autosave(); this.renderFooter(); this.content.querySelector<HTMLInputElement>('[aria-label="今天所有账户已记完"]')?.focus({ preventScroll: true }); });
+    if (this.options.onStatement) {
+      el('p', 'll-muted', '这里只整理对照材料，不保存流水、不确认全天记完。识别结果仍需对照原账单。', footer);
+      const use = button(footer, '用于账单比对', async () => { try { await this.options.onStatement!(structuredClone(this.draft)); this.closeDialog(); } catch (error) { this.draft.error = (error as Error).message; this.render(); } }, 'll-primary'); use.disabled = this.extracting || this.readingImages || this.images.length > 0 || !this.draft.rows.length;
+      restorePosition(); return;
+    }
+    const date = this.draft.recordingDate ?? this.draft.submittedDate, label = date === localDate() ? '今天所有账户已记完' : `${date} 所有账户已记完`;
+    check(footer, label, this.draft.completeDates.includes(date), complete => { this.draft.completeDates = complete ? [...new Set([...this.draft.completeDates, date])] : this.draft.completeDates.filter(d => d !== date); this.autosave(); this.renderFooter(); this.content.querySelector<HTMLInputElement>(`[aria-label="${CSS.escape(label)}"]`)?.focus({ preventScroll: true }); });
     const ready = this.draft.rows.filter(r => r.reviewed && rowIssues(r, this.host.repo.config, this.host.repo.state, this.draft).length === 0);
     let income = 0, expense = 0, refund = 0;
     for (const r of ready) { let n = cents(r.amount, r.kind === 'adjustment'); if (r.currency && r.currency !== 'CNY') n = roundedRatio(n, r.rateCny ? parseRate(r.rateCny) : rateFor(this.host.repo.config, r.currency), RATE_SCALE); if (r.kind === 'income') income += n; if (r.kind === 'expense') expense += n; if (r.kind === 'refund') refund += n; }
     el('p', '', `已核对 ${ready.length} 笔 · 收入 ¥${money(income)} · 净支出 ¥${money(expense - refund)} · 结余 ¥${money(income - expense + refund)}`, footer);
     const completeOnly = !this.draft.rows.length && this.draft.completeDates.length > 0;
-    const save = button(footer, this.saving ? '保存中…' : completeOnly ? '确认今天记完（无新增账目）' : `保存 ${ready.length} 笔`, () => this.save(), 'll-primary'); save.disabled = this.saving || (ready.length === 0 && !completeOnly);
+    const save = button(footer, this.saving ? '保存中…' : completeOnly ? date === localDate() ? '确认今天记完（无新增账目）' : `确认${date}记完（无新增账目）` : `保存 ${ready.length} 笔`, () => this.save(), 'll-primary'); save.disabled = this.saving || (ready.length === 0 && !completeOnly);
     if (ready.length < this.draft.rows.length) el('p', 'll-muted', '未核对或信息不足的记录保留在草稿中。本次部分保存不会确认今天已记完。', footer);
     button(footer, '保存草稿并关闭', async () => { try { await this.flush(); this.closeDialog(); } catch (e) { this.host.notice((e as Error).message); } });
+    restorePosition();
   }
   private renderRow(parent: HTMLElement, row: DraftRow) {
     const c = this.host.repo.config, state = this.host.repo.state;
@@ -209,7 +230,8 @@ export class DraftEditor {
     this.extracting = true; this.draft.error = ''; this.draft.status = 'requesting'; this.render();
     try {
       await this.flush(); const submitted = structuredClone(this.draft);
-      const result = screenshots ? await this.host.extractor.extractScreenshots(this.host.api, this.host.key(), submitted, this.host.repo.config, this.host.repo.state, selectedImages, options) : { ...await this.host.extractor.extract(this.host.api, this.host.key(), submitted, this.host.repo.config, this.host.repo.state), imageEvidence: undefined };
+      const config = this.options.accountId ? { ...this.host.repo.config, defaultAccountId: this.options.accountId } : this.host.repo.config;
+      const result = screenshots ? await this.host.extractor.extractScreenshots(this.host.api, this.host.key(), submitted, config, this.host.repo.state, selectedImages, options) : { ...await this.host.extractor.extract(this.host.api, this.host.key(), submitted, config, this.host.repo.state), imageEvidence: undefined };
       if (this.closed) return;
       if (submitted.text !== this.draft.text) throw new Error('整理期间原文已修改，已保留现有草稿，请重新整理');
       const protectedRows = this.draft.rows.filter(r => r.edited);
