@@ -19,7 +19,7 @@
 
 密钥仅从设备 SecretStorage 取出用于请求，不进入账本及 JSON 备份。失败、超时、无效 JSON 或不完整回复保留原文和草稿。兼容接口的连接检查不能证明真实模型的拆账准确率。
 
-0.1.10按用户要求，对已知DeepSeek模型（`deepseek-flash`、旧Flash别名和`deepseek-v4-pro`）显式设置 `thinking: { type: "enabled" }`、`max_tokens: 65536`，整理最多等待300秒；其他兼容模型保留8192 tokens及60秒，不附加DeepSeek参数。0.1.9关闭思考的临时方案已撤回。模型始终取已保存配置，失败不自动重试或更换模型。`length`表示输出上限或上下文限制导致截断，不能把局部JSON当作完整草稿；错误显示服务返回的输出及思考token数量，不包含思考正文。拦截、工具调用、资源不足、aborted中断、只返回思考而无JSON，以及结束标记不兼容分别提示。0.1.10的额度调整不改冻结账单字段或金融计算；0.1.11单独加入补账 recording_date 上下文。
+从0.1.10起按用户要求，对已知DeepSeek模型（`deepseek-flash`、旧Flash别名和`deepseek-v4-pro`）显式设置 `thinking: { type: "enabled" }`、`max_tokens: 65536`，整理最多等待300秒。65536是单次请求的生成token预算，包含思考和JSON正文，不是每天的调用额度；300秒是客户端等待上限。其他兼容模型保留8192 tokens及60秒，不附加DeepSeek参数。0.1.9关闭思考的临时方案已撤回。模型始终取已保存配置，失败不自动重试或更换模型。`length`表示输出上限或上下文限制导致截断，不能把局部JSON当作完整草稿；错误显示服务返回的输出及思考token数量，不包含思考正文。拦截、工具调用、资源不足、aborted中断、只返回思考而无JSON，以及结束标记不兼容分别提示。0.1.10的额度调整不改冻结账单字段或金融计算；0.1.11单独加入补账 recording_date 上下文。
 
 参数依据为2026-10-15核对的[DeepSeek思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)、[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)及[JSON输出说明](https://api-docs.deepseek.com/guides/json_mode/)。官方文档说明思考模式默认输出额度为64K，输出限制可能造成截断；本地模拟只证明插件传参和错误恢复，不证明用户此前失败由深度思考造成，也不替代真实模型复测。
 
